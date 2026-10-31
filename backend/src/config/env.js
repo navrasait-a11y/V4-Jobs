@@ -130,15 +130,24 @@ function productionChecks(e) {
   const need = (cond, key) => cond && !e[key] && missing.push(key);
   need(e.EMAIL_PROVIDER === 'brevo', 'BREVO_API_KEY');
   need(e.EMAIL_PROVIDER === 'brevo', 'MAIL_FROM_EMAIL');
-  need(e.RAZORPAY_KEY_ID, 'COMPANY_GSTIN');
-  need(e.RAZORPAY_KEY_ID, 'COMPANY_ADDRESS');
-  need(e.SMS_PROVIDER === 'apitxt' && !e.APITXT_API_KEY, 'APITXT_AUTH_KEY');
-  need(e.SMS_PROVIDER === 'apitxt' && e.APITXT_OTP_MODE === 'dlt', 'APITXT_SENDER_ID');
-  need(e.SMS_PROVIDER === 'apitxt' && e.APITXT_OTP_MODE === 'dlt', 'APITXT_PE_ID');
-  need(e.SMS_PROVIDER === 'apitxt' && e.APITXT_OTP_MODE === 'dlt', 'APITXT_TEMPLATE_OTP');
   return missing.map((k) =>
     k === 'REDIS_URL' ? 'REDIS_URL must start with rediss:// for Upstash (TLS)' : `${k} is required in production`,
   );
+}
+
+/** Launch keys that may arrive after the first deploy. The app boots, but these features stay off. */
+function launchWarnings(e) {
+  if (e.NODE_ENV !== 'production') return [];
+  const warnings = [];
+  const missing = (cond, keys, effect) => {
+    const empty = keys.filter((k) => !e[k]);
+    if (cond && empty.length) warnings.push(`${empty.join(', ')} not set: ${effect}`);
+  };
+  const dlt = e.SMS_PROVIDER === 'apitxt' && e.APITXT_OTP_MODE === 'dlt';
+  missing(e.SMS_PROVIDER === 'apitxt' && !e.APITXT_API_KEY, ['APITXT_AUTH_KEY'], 'SMS will fail');
+  missing(dlt, ['APITXT_SENDER_ID', 'APITXT_PE_ID', 'APITXT_TEMPLATE_OTP'], 'OTP SMS will fail');
+  missing(e.RAZORPAY_KEY_ID, ['COMPANY_GSTIN', 'COMPANY_ADDRESS'], 'tax invoices will be incomplete');
+  return warnings;
 }
 
 /**
@@ -161,6 +170,8 @@ if (prodErrors.length) {
   console.error(`Invalid environment configuration:\n${prodErrors.map((m) => ` - ${m}`).join('\n')}`);
   process.exit(1);
 }
+
+if (!error) launchWarnings(env).forEach((m) => console.warn(`[config] ${m}`));
 
 if (error) {
   // Logger is not initialised yet - fail loudly on stderr.
