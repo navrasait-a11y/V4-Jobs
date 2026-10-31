@@ -1,0 +1,19 @@
+# Single-server stack. MongoDB (Atlas) and Redis (Upstash) are managed services configured in .env.
+services:
+  api:
+    build: .
+    env_file: .env
+    ports:
+      - '5000:5000'
+    restart: unless-stopped
+
+  # Optional dedicated queue worker: docker compose --profile worker up -d
+  # Each worker adds Redis commands, so skip it on the Upstash free plan.
+  worker:
+    build: .
+    profiles: ['worker']
+    command: ['node', 'src/worker.js']
+    env_file: .env
+    environment:
+      RUN_SCHEDULER: 'false'
+    restart: unless-stopped
