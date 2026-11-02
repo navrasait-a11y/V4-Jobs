@@ -61,3 +61,14 @@ export function renderTemplate(str = '', vars = {}) {
 }
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Exact, case-insensitive match that ignores spaces around "/" ("Govt / PSU" = "Govt/PSU"). */
+export const looseRegex = (v) =>
+  new RegExp(
+    `^${String(v)
+      .trim()
+      .split(/\s*\/\s*/)
+      .map(escapeRegex)
+      .join('\\s*/\\s*')}$`,
+    'i',
+  );

@@ -10,12 +10,82 @@ import ShareMenu from '../../components/common/ShareMenu';
 import Button from '../../components/ui/Button';
 import { Badge, DetailRow, Section } from '../../components/ui/data';
 import { Alert, EmptyState, ErrorState, Icon, PageLoader } from '../../components/ui/feedback';
-import { useDocumentTitle, usePublicSettings, useSaveJob } from '../../hooks/useData';
+import { useAction, useDocumentTitle, usePublicSettings, useSaveJob } from '../../hooks/useData';
 import { jobApi } from '../../services';
 import useAuthStore from '../../store/useAuthStore';
 import { formatDate, formatExperience, formatLocations, formatSalary, timeAgo, titleCase } from '../../utils/format';
 
 const Text = ({ value }) => <div className="whitespace-pre-line text-sm leading-relaxed text-brand-gray">{value}</div>;
+/** Hides empty rows instead of a dash. */
+const Row = ({ label, value }) => (value ? <DetailRow label={label} value={value} /> : null);
+const list = (v) => (Array.isArray(v) ? v.filter(Boolean).join(', ') : v);
+const range = (a, b, sep = ' to ') => [a, b].filter(Boolean).join(sep);
+
+/**
+ * "Mode of Interview" on a job post. Call Now / Request Call Back show only once the candidate has
+ * an account (signed in) or applied - the API returns `contactAction` only then.
+ */
+const InterviewSection = ({ job, user }) => {
+  const client = useQueryClient();
+  const [requested, setRequested] = useState(Boolean(job.contactAction?.requested));
+  const callback = useAction(() => jobApi.requestCallback(job._id), {
+    success: 'Call back requested. The recruiter will contact you',
+    onSuccess: () => {
+      setRequested(true);
+      client.invalidateQueries({ queryKey: ['job'] });
+    },
+  });
+  const w = job.walkIn || {};
+  const c = job.contact || {};
+  const action = job.contactAction;
+  const hours = range(c.timeFrom, c.timeTo);
+  const days = range(c.dayFrom, c.dayTo);
+  if (!job.interviewMode && !hours && !days) return null;
+  return (
+    <Section title="Interview & contact">
+      <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Row label="Mode of interview" value={job.interviewMode} />
+        {(hours || days) && <Row label="HR contact timing" value={[days, hours].filter(Boolean).join(', ')} />}
+        {job.interviewMode === 'Walk-in' && (
+          <>
+            <Row label="Walk-in dates" value={range(w.startDate && formatDate(w.startDate), w.endDate && formatDate(w.endDate))} />
+            <Row label="Walk-in timing" value={w.timing} />
+            {w.durationDays && <Row label="Duration" value={`${w.durationDays} day${w.durationDays > 1 ? 's' : ''}`} />}
+            <Row label="Venue" value={w.venue} />
+          </>
+        )}
+      </dl>
+      {job.interviewMode === 'Walk-in' && w.mapUrl && (
+        <a href={w.mapUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-brand-blue">
+          <Icon name="map" size={18} /> Open in Google Maps
+        </a>
+      )}
+      <div className="mt-4 border-t border-brand-border pt-4">
+        {action?.type === 'call' && (
+          <div className="flex flex-wrap items-center gap-3">
+            <Button asChild variant="primaryBlue" size="sm">
+              <a href={`tel:+91${action.mobile}`}>
+                <Icon name="call" size={18} /> Call Now
+              </a>
+            </Button>
+            <span className="text-sm text-brand-gray">
+              {[action.name, `+91 ${action.mobile}`].filter(Boolean).join(' · ')}
+            </span>
+          </div>
+        )}
+        {action?.type === 'callback' && (
+          <Button variant={requested ? 'outline' : 'primaryBlue'} size="sm" disabled={requested} loading={callback.isPending} onClick={() => callback.mutate()} leftIcon={<Icon name={requested ? 'check_circle' : 'phone_callback'} size={18} />}>
+            {requested ? 'Call back requested' : 'Request Call Back'}
+          </Button>
+        )}
+        {!user && job.interviewMode && job.interviewMode !== 'Will Confirm Later' && (
+          <p className="text-sm text-brand-gray">Apply or log in to see the Call Now / Request Call Back option.</p>
+        )}
+      </div>
+    </Section>
+  );
+};
+
 
 function useJsonLd(slug, enabled) {
   useEffect(() => {
@@ -193,27 +263,54 @@ const JobDetails = () => {
           )}
           <Section title="Job details">
             <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <DetailRow label="Role" value={job.roles?.join(', ') || job.designation} />
-              <DetailRow label="Department" value={job.departments?.join(', ')} />
-              <DetailRow label="Industry" value={job.industries?.join(', ')} />
-              <DetailRow label="Work mode" value={job.jobModes?.join(', ')} />
-              <DetailRow label="Shift" value={job.shifts?.join(', ')} />
-              <DetailRow label="Education" value={job.education?.levels?.join(', ')} />
-              <DetailRow label="Languages" value={job.languages?.join(', ')} />
-              <DetailRow label="Perks" value={job.perks?.join(', ')} />
-              {job.duration?.value && <DetailRow label="Duration" value={`${job.duration.value} ${job.duration.unit}`} />}
-              {job.deadlineAt && <DetailRow label="Apply by" value={formatDate(job.deadlineAt)} />}
+              <Row label="Role" value={list(job.roles) || job.designation} />
+              <Row label="Department" value={list([...(job.departments || []), ...(job.functions || [])])} />
+              <Row label="Industry" value={list([...(job.industries || []), ...(job.subIndustries || [])])} />
+              <Row label={job.kind === 'internship' ? 'Internship type' : 'Employment type'} value={job.kind === 'internship' ? job.internshipType : list(job.employmentTypes)} />
+              <Row label="Work mode" value={list(job.jobModes)} />
+              <Row label="Shift" value={list(job.shifts)} />
+              <Row label="Experience level" value={list(job.experienceLevels)} />
+              <Row label="Salary type" value={job.kind === 'internship' ? job.stipend?.type : job.salary?.type} />
+              {job.kind === 'internship' && <Row label="Stipend" value={job.stipend?.paid === false ? 'Unpaid' : 'Paid'} />}
+              {job.kind === 'internship' && (job.duration?.value || job.duration?.noFixed) && (
+                <Row label="Internship period" value={job.duration.noFixed ? 'No Fixed Duration' : `${job.duration.value} ${job.duration.unit}`} />
+              )}
+              <Row label="Notice period" value={list(job.noticePeriods?.length ? job.noticePeriods : job.noticePeriod)} />
+              <Row label="Ready to relocate" value={list(job.relocateOptions)} />
+              <Row label="Perks" value={list(job.perks)} />
+              <Row label="Assets needed" value={list(job.assets)} />
+              {job.deadlineAt && <Row label="Last date to apply" value={formatDate(job.deadlineAt)} />}
             </dl>
           </Section>
-          {job.contact?.showToCandidates && (job.contact.name || job.contact.email || job.contact.mobile) && (
-            <Section title="Contact">
-              <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <DetailRow label="Name" value={job.contact.name} />
-                <DetailRow label="Email" value={job.contact.email} />
-                <DetailRow label="Mobile" value={job.contact.mobile} />
+          {(job.education?.levels?.length > 0 || job.education?.degrees?.length > 0 || job.certifications?.length > 0) && (
+            <Section title="Education & certifications">
+              <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Row label="Education" value={list(job.education?.levels)} />
+                <Row label="Degree / course" value={list(job.education?.degrees)} />
+                <Row label="Specialisation" value={list(job.education?.specialisations)} />
+                <Row label="Institution" value={list(job.education?.institutions)} />
+                <Row label="Education type" value={list(job.education?.types)} />
+                <Row label="Education status" value={list(job.education?.statuses)} />
+                <Row label="Medium" value={list(job.education?.mediums)} />
+                {job.education?.marksType && <Row label="Minimum marks" value={`${job.education.marksValue || ''} ${job.education.marksType}`.trim()} />}
+                <Row label="Certifications" value={list(job.certifications)} />
               </dl>
             </Section>
           )}
+          {(job.genders?.length || job.ageRange?.min || job.englishFluency?.length || job.languages?.length || job.diversity?.length || job.maritalStatuses?.length) > 0 && (
+            <Section title="Candidate criteria">
+              <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Row label="Gender" value={list(job.genders)} />
+                <Row label="Marital status" value={list(job.maritalStatuses)} />
+                {job.ageRange?.min && <Row label="Age" value={job.ageRange.max >= 61 ? `${job.ageRange.min}+ Years` : `${job.ageRange.min} - ${job.ageRange.max} Years`} />}
+                <Row label="English fluency" value={list(job.englishFluency)} />
+                <Row label="Languages" value={list(job.languages)} />
+                <Row label="Diversity hiring" value={list(job.diversity)} />
+                <Row label="Disability" value={list([...(job.disabilityStatuses || []), ...(job.disabilityTypes || [])])} />
+              </dl>
+            </Section>
+          )}
+          <InterviewSection job={job} user={user} />
         </div>
 
         <aside className="w-full shrink-0 space-y-4 lg:w-80">

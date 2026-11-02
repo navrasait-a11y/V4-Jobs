@@ -208,7 +208,7 @@ All dropdown and suggestion lists in the Excel are served from master data, so a
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/master-data/types` | `[{ key, label, userAddable }]` |
-| GET | `/master-data/:type?q=&parent=&limit=` | Type-ahead. `parent` gives children (department → job_role, education_level → degree → specialisation) |
+| GET | `/master-data/:type?q=&parent=&parents=&limit=` | Type-ahead. `parent` (id) gives children. `parents=A|B` (pipe-separated parent names, up to 10) returns the children of those parents with `parentName` on each item: `sub_industry` (parents: industries), `department_function` (parents: departments), `degree` (parents: education levels), `specialisation` (parents: degree names, or `Level>Degree` such as `Graduate>B.Com` because a course name can repeat across levels) |
 | GET | `/master-data/bulk?types=a,b,c` | Many types at once |
 | POST | `/master-data/:type/suggest` ✔ | `{ name }` – "Add new option" by users. Only for `job_title`, `key_skill`, `it_skill`, `institution`, `company_name`, `certification` |
 | GET | `/locations?q=jaip&state=&city=&popular=true&limit=20` | Returns `{ locality, district, city, state, country, displayName }`, e.g. "Jagatpura, Jaipur, Rajasthan, India" |
@@ -218,7 +218,7 @@ All dropdown and suggestion lists in the Excel are served from master data, so a
 
 Store and send the option's **`name`** (string) in profile, job and alert fields, not its `_id`.
 
-**Selection limits** (the API enforces these too): key skills ≤ 15, IT skills ≤ 15, industries ≤ 5, departments ≤ 25, job roles ≤ 10, job modes ≤ 3 per employment, preferred locations ≤ 4 (Excel shows 3 for job alerts), languages ≤ 30, assets ≤ 40, certifications ≤ 30.
+**Selection limits** (from the client's Excel, the API enforces these too): key skills ≤ 15, IT skills ≤ 15, industries ≤ 5, departments ≤ 5, job roles ≤ 10, languages ≤ 10, assets ≤ 10, certifications ≤ 10, preferred locations ≤ 3, preferred job modes ≤ 3, preferred shifts ≤ 3, job modes ≤ 3 per employment.
 
 ---
 
@@ -251,8 +251,8 @@ Store and send the option's **`name`** (string) in profile, job and alert fields
 | Journey | `experienceLevel, journeyStatus, presentJobStatus, availabilityStatus (open_to_work\|not_available\|serving_notice)` |
 | Personal | `dob, maritalStatus, guardianRelation, guardianName, category, currentLocation{locality,district,city,state,country,pincode}, hometown{...}, disability{status,type}, military{status,serviceType}, englishFluency, languages[], assets[], hasTwoWheeler, hasFourWheeler, drivingLicense` |
 | Resume | `resumeHeadline, profileSummary, keySkills[], itSkills[], certifications[]` |
-| Work | `totalExperience{years,months}, currentSalary (monthly in-hand), noticePeriod, industries[], departments[], roles[]` |
-| Preferences | `preferences{ jobModes[], locations[place] (≤4), willingToRelocate, anywhereInIndia, expectedSalary, employmentTypes[], shifts[], skills[], industries[], departments[], roles[], noticePeriod, jobTypes['job','internship'] }` |
+| Work | `totalExperience{years,months}, currentSalary (monthly in-hand), noticePeriod, industries[], subIndustries[] (≤20), departments[], functions[] (≤20), roles[]` |
+| Preferences | `preferences{ jobModes[] (≤3), locations[place] (≤3), willingToRelocate, anywhereInIndia, expectedSalary, employmentTypes[], shifts[], skills[], industries[], subIndustries[], departments[], functions[], roles[], noticePeriod, jobTypes['job','internship'] }` |
 | Social / portfolio | `socialProfiles[{platform,url}], portfolios[{name,url}]` |
 | Settings | `notificationPrefs{email,sms,whatsapp,push,jobAlerts,recruiterMessages,marketing}, privacy{profileVisibility: public\|recruiters\|hidden, showContact}` |
 
@@ -275,7 +275,7 @@ Dates in the "MM-YYYY" pickers: send the first day of that month as ISO, e.g. `2
 | GET | `/jobs/:idOrSlug/google-jobs` | – | **schema.org JobPosting JSON-LD**. Inject it into the job page `<head>` as `<script type="application/ld+json">` (only when `platform.googleJobsEnabled`) |
 | GET | `/jobs/sitemap.xml` | – | Proxy it or link it from `robots.txt` |
 
-**Search query params:** `q` (keywords: title / skills / company), `kind=job|internship|any`, `location` (cities or states, comma-separated), `includeRemote`, `experience` (years), `salaryMin`, `salaryMax` (monthly), `stipendMin`, `durationMax` (internship months), `workMode`, `department`, `role`, `industry`, `employmentType`, `education`, `skills`, `shift`, `label` (`premium, starred, featured, actively_hiring, urgent`), `category` (IT Jobs / Non IT Jobs / Work From Home Jobs …), `companyType` (Indian MNC, Startup …), `postedBy=company|consultancy`, `organization` (employer id), `topCompanies=true`, `verifiedOnly=true`, `freshness=1|3|7|15|30` (days), `sort=relevance|date|salary`, `page`, `limit`.
+**Search query params:** `q` (keywords: title / skills / company), `kind=job|internship|any`, `location` (cities or states, comma-separated), `includeRemote`, `experience` (years), `salaryMin`, `salaryMax` (monthly), `stipendMin`, `durationMax` (internship months), `workMode`, `department`, `role`, `industry`, `employmentType`, `education`, `skills`, `shift`, `label` (`premium, starred, featured, actively_hiring, urgent`), `category` (IT Jobs / Non IT Jobs / Work From Home Jobs …), `companyType` (Indian MNC, Startup …), `postedBy=company|consultancy`, `organization` (employer id), `topCompanies=true`, `verifiedOnly=true`, `freshness=1|3|7|15|30` (days), `sort=relevance|date|salary`, `page`, `limit`. Also `function` and `subIndustry` (comma-separated) filter by department function and sub industry.
 
 **Job list item fields:** `_id, slug, kind, title, designation, organization, organizationType, orgSnapshot{name,logo,isVerified,slug,username,employerType}, locations[], isRemote, experience{min,max}, salary{min,max,period,hidden,currency}, stipend, duration, jobModes, employmentTypes, keySkills, labels, isFeatured, publishedAt, refreshedAt, deadlineAt, openings, consultancyClient{name?,hideName}, stats.applications`.
 If `salary.hidden` is true, show "Not disclosed". If `consultancyClient.hideName` is true, the client name is not sent.
@@ -487,7 +487,7 @@ Use `user.employer.permissions` (or the role defaults) to hide menu items.
 
 | Method | Path | Notes |
 |---|---|---|
-| GET / PATCH | `/employer/organization` | Profile (Excel "Employer Profile & Documentation"): `name, legalName, username, employerType, organizationType, industries[], departments[], employeeCount, foundedDate, website, about (≤1000 words), socialProfiles[], hiringStatus, gstNumber, panNumber, email, phone, consultancyDeclaration{authorized,noCandidateFee}` |
+| GET / PATCH | `/employer/organization` | Profile (Excel "Employer Profile & Documentation"): `name, legalName, username, employerType, organizationType, industries[], subIndustries[], departments[], functions[], employeeCount, foundedDate, website, about (≤1000 words), socialProfiles[], hiringStatus, gstNumber, panNumber, email, phone, consultancyDeclaration{authorized,noCandidateFee}` |
 | POST | `/employer/organization/logo`, `/cover` | multipart `logo` / `cover` |
 | POST / PATCH / DELETE | `/employer/organization/offices[/:id]` | `{ type (Registered/Corporate/Branch/Head Office/Work Location/Other), address, locality, district, city, state, country, pincode, geo{lat,lng}, mapUrl, isPrimary }` – several offices |
 | POST | `/employer/organization/documents` | multipart `file` + `type` (master-data `document_type`) + `number` – **max 3 documents**. Re-uploading the same type replaces it |
@@ -512,7 +512,7 @@ KYC status (`organization.kycStatus` and per document): `not_submitted, under_re
             "resume_search": { "daily": 100 }, "resume_download": { "monthly": 100 }, "excel_download": { "monthly": 20 } }
 ```
 
-Metrics: `job_post, resume_view (contact unlock), resume_download, invite, excel_download, resume_search, hiring`. Periods: `daily, weekly, monthly, quarterly, yearly`. A missing or `null` value means unlimited.
+Metrics: `job_post, resume_view (contact unlock), resume_download, invite, excel_download, resume_search, hiring, response_download_own, response_download_all` (the last two count applicant rows exported to Excel). Periods: `daily, weekly, monthly, quarterly, yearly`. A missing or `null` value means unlimited.
 
 ### 6.2 Jobs and internships
 
@@ -530,7 +530,7 @@ Metrics: `job_post, resume_view (contact unlock), resume_download, invite, excel
 | POST | `/employer/jobs/bulk-import?publish=false` | multipart `file` (xlsx) | Paid plans only (`FEATURE_LOCKED`). Columns: Job Title, Designation, Description, Key Skills, City, State, Min Experience, Max Experience, Min Salary, Max Salary, Openings, Employment Type, Work Mode, Industry, Department, Role, Kind, Client Name |
 | POST | `/jobs/guest-post` | `{ employer:{ employerType, organizationName, fullName, email, mobile, designation?, heardFrom?, declarations, acceptTerms:true }, job:{...} }` | **Post a job without login** (public). Creates the employer account and e-mails a set-password link |
 
-**Job fields:** `kind (job|internship), title*, designation, description, responsibilities, keySkills[] (≤30), industries[], departments[], roles[], category, employmentTypes[], jobModes[], shifts[], openings, experience{min,max} (years), experienceLevels[], salary{min,max,type,period:monthly|yearly,currency,hidden}, perks[], stipend{min,max,type}, duration{value,unit:days|weeks|months}, internshipStartDate, education{levels[],degrees[],specialisations[]}, gender (any|male|female|transgender|other), ageRange{min,max}, languages[], assets[], noticePeriod, locations[place] (≤15), address, isRemote, consultancyClient{name,hideName,industry} (consultancies hiring for a client), contact{name,email,mobile,showToCandidates}, questions[{question,type:text|yes_no|number|choice,options[],required}] (≤10), applyExternalUrl, deadlineAt, expiresAt, googleJobsEnabled`.
+**Job fields:** `kind (job|internship), title*, designation, description, responsibilities, keySkills[] (≤30), industries[] (≤5), subIndustries[] (≤20), departments[] (≤5), functions[] (≤20), roles[] (≤10), category, employmentTypes[], jobModes[], shifts[], openings, experience{min,max} (years), experienceLevels[], salary{min,max,type,period:monthly|yearly,currency,hidden}, perks[], stipend{min,max,type}, duration{value,unit:days|weeks|months}, internshipStartDate, education{levels[],degrees[],specialisations[]}, gender (any|male|female|transgender|other), ageRange{min,max}, languages[], assets[], noticePeriod, locations[place] (≤15), address, isRemote, consultancyClient{name,hideName,industry} (consultancies hiring for a client), contact{name,email,mobile,showToCandidates}, questions[{question,type:text|yes_no|number|choice,options[],required}] (≤10), applyExternalUrl, deadlineAt, expiresAt, googleJobsEnabled`.
 Publishing needs `description` and at least one location. The default expiry is 30 days (admin setting).
 
 ### 6.3 Responses / ATS

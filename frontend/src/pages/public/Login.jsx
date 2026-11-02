@@ -28,7 +28,7 @@ export const AuthShell = ({ title, subtitle, children, footer }) => (
           ))}
         </ul>
       </div>
-      <div className="p-6 sm:p-8">
+      <div className="min-w-0 p-6 sm:p-8">
         <h1 className="text-2xl font-bold text-brand-dark">{title}</h1>
         {subtitle && <p className="mt-1 text-sm text-brand-gray">{subtitle}</p>}
         <div className="mt-5">{children}</div>

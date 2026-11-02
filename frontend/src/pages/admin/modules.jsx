@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import Button from '../../components/ui/Button';
 import { Badge, StatusBadge } from '../../components/ui/data';
-import { JobCandidates, SendTemplate } from '../../components/admin/AdminActions';
+import { AlertSendJobs, JobCandidates, SendTemplate } from '../../components/admin/AdminActions';
 import InvoiceViewer from '../../components/shared/InvoiceViewer';
 import { adminApi } from '../../services';
 import { formatCurrency, formatDate, formatDateTime, formatLocations, titleCase } from '../../utils/format';
@@ -50,6 +50,16 @@ const WithModal = ({ label, render }) => {
         {label}
       </Button>
       {open && render(() => setOpen(false))}
+    </>
+  );
+};
+
+const AlertJobs = ({ alert }) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button size="sm" variant="ghost" onClick={() => setOpen(true)}>Send jobs</Button>
+      {open && <AlertSendJobs alert={alert} onClose={() => setOpen(false)} />}
     </>
   );
 };
@@ -275,11 +285,13 @@ export const MODULES = {
   'job-alerts': {
     title: 'Job Alerts',
     path: '/job-alerts',
-    columns: [two('name', 'Alert', (r) => r.name, (r) => r.email), { key: 'frequency', header: 'Frequency', render: (r) => titleCase(r.frequency) }, { key: 'active', header: 'State', render: (r) => <Badge tone={r.isActive ? 'green' : 'gray'}>{r.isActive ? 'Active' : 'Stopped'}</Badge> }, date()],
+    columns: [two('name', 'Alert', (r) => r.name, (r) => r.email), { key: 'frequency', header: 'Frequency', render: (r) => titleCase(r.frequency) }, { key: 'active', header: 'State', render: (r) => (r.status === 'trashed' ? <StatusBadge status="trashed" label="Deleted" /> : <Badge tone={r.isActive ? 'green' : 'gray'}>{r.isActive ? 'Active' : 'Stopped'}</Badge>) }, date()],
+    tabs: { key: 'status', options: [{ value: '', label: 'All' }, ...opt(['active', 'paused']), { value: 'trashed', label: 'Trash' }] },
     filters: [{ key: 'frequency', label: 'Frequency', options: opt(['daily', 'weekly', 'monthly']) }],
     bulk: { path: '/job-alerts/bulk', actions: [{ action: 'start', label: 'Start' }, { action: 'stop', label: 'Stop' }, { action: 'trash', label: 'Trash', danger: true }] },
     exportPath: '/job-alerts/export',
     importPath: '/job-alerts/import',
+    rowActions: (r) => <AlertJobs alert={r} />,
     editFields: [
       { key: 'name', label: 'Name' },
       { key: 'frequency', label: 'Frequency', type: 'select', options: opt(['daily', 'weekly', 'monthly']) },

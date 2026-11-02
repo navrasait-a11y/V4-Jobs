@@ -21,11 +21,16 @@ import {
   bulkIds,
   exportFormat,
 } from '../../shared/validators/common.js';
-import { ROLES, PIPELINE_STAGES, SCREENING_STATUS, CALLING_STATUS, MESSAGING_STATUS, FORWARD_CHANNELS, PAGE_SIZES } from '../../shared/constants/index.js';
+import { ROLES, PIPELINE_STAGES, SCREENING_STATUS, CALLING_STATUS, MESSAGING_STATUS, FORWARD_CHANNELS, PAGE_SIZES, DISTANCE_KM } from '../../shared/constants/index.js';
 import * as s from './application.service.js';
 
 const answers = Joi.array()
-  .items(Joi.object({ question: Joi.string().max(500).required(), answer: Joi.string().max(2000).allow('') }))
+  .items(
+    Joi.object({
+      question: Joi.string().max(500).required(),
+      answer: Joi.alternatives(Joi.string().max(2000).allow(''), Joi.array().items(Joi.string().max(200)).max(10)), // array for Multiple Choice
+    }),
+  )
   .max(10);
 const jsonField = (schema) =>
   Joi.alternatives(
@@ -63,17 +68,20 @@ const guestApplyBody = Joi.object({
   hasTwoWheeler: Joi.boolean(),
   hasFourWheeler: Joi.boolean(),
   drivingLicense: s_,
-  assets: jsonField(stringList(40)),
+  assets: jsonField(stringList(25)),
+  documents: jsonField(stringList(35)),
   education: jsonField(Joi.object({ level: s_, degree: s_, specialisation: s_, institution: s_ })),
   presentJobStatus: s_,
   experienceLevel: s_,
   totalExperienceMonths: Joi.number().integer().min(0).max(720),
   currentJobTitle: s_,
   currentSalary: Joi.number().min(0),
-  keySkills: jsonField(stringList(15)),
-  roles: jsonField(stringList(10)),
-  departments: jsonField(stringList(25)),
+  keySkills: jsonField(stringList(20)),
+  roles: jsonField(stringList(15)),
+  departments: jsonField(stringList(5)),
+  functions: jsonField(stringList(20)),
   industries: jsonField(stringList(5)),
+  subIndustries: jsonField(stringList(20)),
   currentCompany: s_,
   currentCompanyType: s_,
   employmentType: s_,
@@ -84,6 +92,8 @@ const guestApplyBody = Joi.object({
   languages: jsonField(stringList(30)),
   englishFluency: s_,
   preferredLocations: jsonField(Joi.array().items(place).max(4)),
+  distanceKm: Joi.number().valid(...DISTANCE_KM),
+  relocation: jsonField(stringList(4)),
   heardFrom: s_,
   consentCommunication: Joi.boolean(),
   acceptTerms: Joi.boolean().valid(true).required(),

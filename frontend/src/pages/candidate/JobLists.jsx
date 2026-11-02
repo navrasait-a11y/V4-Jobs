@@ -5,8 +5,9 @@ import CompanyCard from '../../components/common/CompanyCard';
 import JobCard from '../../components/common/JobCard';
 import Button from '../../components/ui/Button';
 import { PageHeader, Pagination, StatusBadge, Tabs } from '../../components/ui/data';
-import { CardSkeleton, ConfirmDialog, EmptyState, ErrorState, Modal } from '../../components/ui/feedback';
-import { LocationField, SelectField, SuggestField, TextField } from '../../components/ui/form';
+import { AlertCriteriaFields, criteriaError, criteriaForm, FREQUENCIES, toCriteria } from '../../components/candidate/JobAlertFields';
+import { Alert, CardSkeleton, ConfirmDialog, EmptyState, ErrorState, Modal } from '../../components/ui/feedback';
+import { SelectField, TextField } from '../../components/ui/form';
 import { useAction, useCandidateProfile, useDocumentTitle, useUrlFilters } from '../../hooks/useData';
 import { alertApi, employerPublicApi, interviewApi, inviteApi, jobApi } from '../../services';
 import { formatDateTime, timeAgo, titleCase } from '../../utils/format';
@@ -162,22 +163,30 @@ export const CandidateInterviews = () => {
 const AlertForm = ({ alert, onClose }) => {
   const { data: me } = useCandidateProfile();
   const prefill = useQuery({ queryKey: ['alert-prefill'], queryFn: alertApi.prefill, enabled: !alert });
-  const c = alert?.criteria || {};
-  const [form, setForm] = useState({ name: alert?.name || '', frequency: alert?.frequency || 'daily', jobTitle: c.jobTitle || '', keySkills: c.keySkills || [], locations: c.locations || [], min: c.expectedSalary?.min || '', max: c.expectedSalary?.max || '' });
+  const base = alert?.criteria || {};
+  const [form, setForm] = useState({ name: alert?.name || '', frequency: alert?.frequency || 'daily', ...criteriaForm(base) });
+  const [error, setError] = useState('');
   useEffect(() => {
-    const p = prefill.data?.criteria;
-    if (p) setForm((f) => ({ ...f, jobTitle: f.jobTitle || p.jobTitle || '', keySkills: f.keySkills.length ? f.keySkills : p.keySkills || [], locations: f.locations.length ? f.locations : p.locations || [] }));
+    const p = prefill.data;
+    if (!p) return;
+    // Pre-fill only what the candidate has not typed yet.
+    const filled = criteriaForm(p.criteria);
+    setForm((f) => {
+      const next = { ...f, name: f.name || p.name || '' };
+      for (const [k, v] of Object.entries(filled)) if ((Array.isArray(f[k]) ? !f[k].length : f[k] === '') && (Array.isArray(v) ? v.length : v !== '')) next[k] = v;
+      return next;
+    });
   }, [prefill.data]);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e?.target ? e.target.value : e }));
   const save = useAction(
     () => {
       const body = {
-        name: form.name || form.jobTitle,
+        name: form.name.trim() || form.jobTitle || 'My job alert',
         frequency: form.frequency,
         email: alert?.email || me?.user?.email,
         mobile: alert?.mobile || me?.user?.mobile,
         channels: alert?.channels || ['email', 'in_app', 'push'],
-        criteria: { ...c, jobTitle: form.jobTitle, keySkills: form.keySkills, locations: form.locations, kind: c.kind || 'any', ...(form.min || form.max ? { expectedSalary: { min: Number(form.min) || undefined, max: Number(form.max) || undefined } } : {}) },
+        criteria: toCriteria(form, base),
       };
       return alert ? alertApi.update(alert._id, body) : alertApi.create(body);
     },
@@ -188,33 +197,37 @@ const AlertForm = ({ alert, onClose }) => {
       open
       onClose={onClose}
       title={alert ? 'Edit job alert' : 'New job alert'}
+      subtitle={alert ? undefined : 'We filled this from your profile. Change anything you like.'}
+      size="xl"
       footer={
         <Button type="submit" form="alert-form" size="sm" variant="primaryBlue" loading={save.isPending}>
-          Save
+          Save alert
         </Button>
       }
     >
       <form
         id="alert-form"
-        className="space-y-4"
+        className="space-y-6"
         onSubmit={(e) => {
           e.preventDefault();
-          save.mutate();
+          const problem = criteriaError(form);
+          setError(problem);
+          if (!problem) save.mutate();
         }}
       >
-        <TextField label="Alert name" value={form.name} onChange={set('name')} />
-        <SuggestField label="Job title" required lookup="job_title" allowCreate value={form.jobTitle} onChange={set('jobTitle')} />
-        <SuggestField label="Key skills" lookup="key_skill" multiple max={15} allowCreate value={form.keySkills} onChange={set('keySkills')} />
-        <LocationField label="Locations" multiple max={3} value={form.locations} onChange={set('locations')} />
-        <div className="grid grid-cols-2 gap-4">
-          <TextField label="Min monthly salary" type="number" min="0" value={form.min} onChange={set('min')} />
-          <TextField label="Max monthly salary" type="number" min="0" value={form.max} onChange={set('max')} />
+        {error && <Alert tone="error">{error}</Alert>}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <TextField label="Job alert name" value={form.name} onChange={set('name')} maxLength={120} placeholder="e.g. Sales jobs in Jaipur" />
+          <SelectField label="Job alert frequency" placeholder={null} options={FREQUENCIES} value={form.frequency} onChange={set('frequency')} />
         </div>
-        <SelectField label="Frequency" placeholder={null} options={[{ value: 'daily', label: 'Daily' }, { value: 'weekly', label: 'Weekly' }, { value: 'monthly', label: 'Monthly' }]} value={form.frequency} onChange={set('frequency')} />
+        <AlertCriteriaFields form={form} set={set} setForm={setForm} />
       </form>
     </Modal>
   );
 };
+
+const alertSummary = (c = {}) =>
+  [c.jobTitle, (c.keySkills || []).slice(0, 3).join(', '), (c.locations || []).map((l) => l.city).filter(Boolean).join(', ')].filter(Boolean).join(' · ');
 
 export const JobAlerts = () => {
   useDocumentTitle('Job alerts');
@@ -253,7 +266,8 @@ export const JobAlerts = () => {
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="truncate font-semibold text-brand-dark">{a.name}</p>
-                    <p className="text-xs text-brand-gray-muted">{titleCase(a.frequency)} · {(a.criteria?.keySkills || []).slice(0, 3).join(', ')}</p>
+                    <p className="text-xs text-brand-gray-muted">{titleCase(a.frequency)}</p>
+                    <p className="mt-1 line-clamp-2 text-sm text-brand-gray">{alertSummary(a.criteria) || 'No filters'}</p>
                   </div>
                   <label className="flex items-center gap-1.5 text-xs text-brand-gray">
                     <input type="checkbox" checked={a.isActive} onChange={(e) => toggle.mutate({ id: a._id, isActive: e.target.checked })} /> Active

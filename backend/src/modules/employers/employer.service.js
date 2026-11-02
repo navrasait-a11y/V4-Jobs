@@ -4,7 +4,7 @@ import ApiError from '../../shared/errors/ApiError.js';
 import { ROLES, USER_STATUS, DEFAULT_MEMBER_PERMISSIONS, EMPLOYER_PERMISSIONS } from '../../shared/constants/index.js';
 import { putFile, deleteFile, signedUrl } from '../../shared/services/storage.service.js';
 import { randomToken, sha256, randomPassword } from '../../shared/utils/crypto.js';
-import { escapeRegex, normalizeEmail, normalizeMobile, pick } from '../../shared/utils/helpers.js';
+import { escapeRegex, normalizeEmail, normalizeMobile, pick, toArray, looseRegex } from '../../shared/utils/helpers.js';
 import User from '../users/user.model.js';
 import Organization from './organization.model.js';
 import Job from '../jobs/job.model.js';
@@ -38,7 +38,9 @@ const ORG_EDITABLE = [
   'employerType',
   'organizationType',
   'industries',
+  'subIndustries',
   'departments',
+  'functions',
   'employeeCount',
   'foundedDate',
   'website',
@@ -245,6 +247,7 @@ export async function addMember(req, data) {
       memberRole: data.memberRole,
       designation: data.designation,
       department: data.department,
+      functions: data.functions,
       hiringAuthority: data.hiringAuthority,
       permissions: resolvePermissions(data.memberRole, data.permissions),
       quotas: data.quotas,
@@ -276,7 +279,7 @@ export async function updateMember(req, memberId, data) {
   const member = await findMember(req.orgId, memberId);
   if (member.employer.isOwner && (data.memberRole || data.permissions || data.status)) throw ApiError.forbidden('The account owner role cannot be changed');
   for (const k of ['fullName', 'gender']) if (data[k] !== undefined) member[k] = data[k];
-  for (const k of ['designation', 'department', 'hiringAuthority']) if (data[k] !== undefined) member.employer[k] = data[k];
+  for (const k of ['designation', 'department', 'functions', 'hiringAuthority']) if (data[k] !== undefined) member.employer[k] = data[k];
   if (data.memberRole) member.employer.memberRole = data.memberRole;
   if (data.permissions || data.memberRole) member.employer.permissions = resolvePermissions(member.employer.memberRole, data.permissions);
   if (data.quotas) member.employer.quotas = data.quotas;
@@ -333,14 +336,38 @@ export async function publicProfile(slugOrUsername, viewer) {
   return { ...org, activeJobs, isFollowing: Boolean(isFollowing) };
 }
 
-export async function listPublicEmployers({ q, type, industry, city, verified, label, page, limit, skip, sort }) {
+const exact = (v) => new RegExp(`^${escapeRegex(String(v).trim())}$`, 'i');
+
+/** Public companies / recruiters directory with the Excel side filters. Job-based filters match employers with such an active job. */
+export async function listPublicEmployers(q) {
+  const { page, limit, skip, sort } = q;
   const filter = { status: USER_STATUS.ACTIVE };
-  if (type) filter.type = type;
-  if (industry) filter.industries = industry;
-  if (city) filter['offices.city'] = new RegExp(`^${escapeRegex(city)}$`, 'i');
-  if (verified) filter.isVerified = true;
-  if (label) filter.labels = label;
-  if (q) filter.name = new RegExp(escapeRegex(q), 'i');
+  const types = toArray(q.type);
+  if (types.length === 1) filter.type = types[0];
+  const industries = toArray(q.industry);
+  if (industries.length) filter.industries = { $in: industries.map(exact) };
+  const cities = toArray(q.city).slice(0, 20);
+  if (cities.length) filter['offices.city'] = { $in: cities.map(exact) };
+  const companyTypes = toArray(q.companyType);
+  if (companyTypes.length) filter.employerType = { $in: companyTypes.map(looseRegex) };
+  const sizes = toArray(q.companySize);
+  if (sizes.length) filter.employeeCount = { $in: sizes };
+  const top = toArray(q.topCompany);
+  if (top.length) filter.name = { $in: top.map((t) => new RegExp(`(^|[^a-z0-9])${escapeRegex(t)}`, 'i')) };
+  if (q.verified) filter.isVerified = true;
+  if (q.label) filter.labels = q.label;
+  if (q.q) filter.$and = [{ name: new RegExp(escapeRegex(q.q), 'i') }];
+
+  const jobFilter = { status: 'active' };
+  if (q.datePosted) jobFilter.publishedAt = { $gte: new Date(Date.now() - q.datePosted * 86400000) };
+  const roles = toArray(q.role);
+  if (roles.length) jobFilter.roles = { $in: roles };
+  const departments = toArray(q.department);
+  if (departments.length) jobFilter.departments = { $in: departments };
+  const levels = toArray(q.experienceLevel);
+  if (levels.length) jobFilter.experienceLevels = { $in: levels };
+  if (Object.keys(jobFilter).length > 1) filter._id = { $in: await Job.distinct('organization', jobFilter) };
+
   const [items, total] = await Promise.all([
     Organization.find(filter)
       .select('type name username slug logo employerType industries employeeCount isVerified labels stats offices.city')

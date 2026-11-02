@@ -20,7 +20,7 @@ import {
   pagination,
   bulkIds,
 } from '../../shared/validators/common.js';
-import { ROLES, EMPLOYER_MEMBER_ROLES, EMPLOYER_PERMISSIONS, USAGE_METRICS, QUOTA_PERIODS, USER_STATUS } from '../../shared/constants/index.js';
+import { ROLES, EMPLOYER_MEMBER_ROLES, EMPLOYER_PERMISSIONS, USAGE_METRICS, QUOTA_PERIODS, USER_STATUS, DATE_POSTED_DAYS } from '../../shared/constants/index.js';
 import * as s from './employer.service.js';
 
 const quotaSchema = Joi.object(
@@ -34,7 +34,9 @@ const orgBody = Joi.object({
   employerType: shortText.allow(''),
   organizationType: shortText.allow(''),
   industries: stringList(5),
-  departments: stringList(25),
+  subIndustries: stringList(20),
+  departments: stringList(5),
+  functions: stringList(20),
   employeeCount: shortText.allow(''),
   foundedDate: Joi.date().max('now'),
   website: url.allow(''),
@@ -85,7 +87,8 @@ const memberBody = Joi.object({
   password,
   gender: shortText,
   designation: shortText,
-  department: stringList(25),
+  department: stringList(5),
+  functions: stringList(20),
   hiringAuthority: shortText,
   memberRole: Joi.string()
     .valid(...EMPLOYER_MEMBER_ROLES.filter((r) => r !== 'employer_admin'), 'employer_admin')
@@ -200,6 +203,8 @@ me.get('/followers', requireEmployer(), validate({ query: Joi.object(pagination)
 
 /* ------------------------------------------------------------ public */
 
+const csvList = (max = 20) => Joi.alternatives(Joi.array().items(Joi.string().max(150)).max(max), Joi.string().max(3000));
+
 const pub = Router();
 pub.get(
   '/',
@@ -207,11 +212,19 @@ pub.get(
     query: Joi.object({
       ...pagination,
       q: Joi.string().trim().max(100).allow(''),
-      type: Joi.string().valid('company', 'consultancy'),
-      industry: Joi.string().max(150),
-      city: Joi.string().max(100),
+      type: csvList(2),
+      industry: csvList(),
+      city: csvList(),
       verified: Joi.boolean(),
       label: Joi.string().max(40),
+      // "Side Filters- Companies Search" (Other Forms Excel)
+      datePosted: Joi.number().valid(...DATE_POSTED_DAYS),
+      companyType: csvList(),
+      companySize: csvList(),
+      role: csvList(),
+      department: csvList(),
+      experienceLevel: csvList(),
+      topCompany: csvList(),
     }),
   }),
   async (req, res) =>

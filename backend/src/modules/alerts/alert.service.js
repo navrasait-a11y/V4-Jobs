@@ -57,7 +57,9 @@ export async function prefill(userId) {
       currentSalary: p?.currentSalary,
       locations: (p?.preferences?.locations || []).slice(0, 3),
       industries: (p?.industries || []).slice(0, 5),
+      subIndustries: (p?.subIndustries || []).slice(0, 20),
       departments: (p?.departments || []).slice(0, 5),
+      functions: (p?.functions || []).slice(0, 20),
       roles: (p?.roles || []).slice(0, 10),
       educationLevels: (p?.educations || [])
         .map((e) => e.level)
@@ -152,7 +154,9 @@ export async function guestCreateAlert(req, body, file) {
           currentSalary: c.currentSalary,
           totalExperienceMonths: c.totalExperienceMonths,
           industries: c.industries,
+          subIndustries: c.subIndustries,
           departments: c.departments,
+          functions: c.functions,
           roles: c.roles,
           preferences: { locations: c.locations, skills: c.keySkills, roles: c.roles },
         },
@@ -178,7 +182,8 @@ export async function guestCreateAlert(req, body, file) {
 
 export async function adminList(q, { page, limit, skip, sort }) {
   const filter = { ...dateRangeFilter(q) };
-  if (q.status) filter.status = q.status;
+  // Alerts a job seeker deleted stay in the Trash view only.
+  filter.status = q.status || { $ne: 'trashed' };
   if (q.frequency) filter.frequency = q.frequency;
   if (q.source) filter.source = q.source;
   if (q.q) filter.$or = [{ name: new RegExp(escapeRegex(q.q), 'i') }, { email: new RegExp(escapeRegex(q.q), 'i') }, { mobile: q.q }];

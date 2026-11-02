@@ -1,5 +1,6 @@
 import Joi from 'joi';
 import { objectId, place, shortText, longText, stringList, url, socialLink, username } from '../../shared/validators/common.js';
+import { DISTANCE_KM } from '../../shared/constants/index.js';
 
 const s = shortText.allow('', null);
 
@@ -21,7 +22,9 @@ export const employment = Joi.object({
   description: longText.allow(''),
   skills: stringList(15),
   industries: stringList(5),
-  departments: stringList(25),
+  subIndustries: stringList(20),
+  departments: stringList(5),
+  functions: stringList(20),
   roles: stringList(10),
 });
 
@@ -41,17 +44,21 @@ export const education = Joi.object({
 });
 
 const preferences = Joi.object({
-  jobModes: stringList(5),
+  jobModes: stringList(3),
   locations: Joi.array().items(place).max(4),
+  relocation: stringList(4),
+  distanceKm: Joi.number().valid(...DISTANCE_KM).allow(null),
   willingToRelocate: Joi.boolean(),
   anywhereInIndia: Joi.boolean(),
   expectedSalary: Joi.number().min(0).max(100000000),
   employmentTypes: stringList(12),
-  shifts: stringList(5),
+  shifts: stringList(3),
   skills: stringList(15),
   industries: stringList(5),
-  departments: stringList(25),
-  roles: stringList(10),
+  subIndustries: stringList(20),
+  departments: stringList(5),
+  functions: stringList(20),
+  roles: stringList(15),
   noticePeriod: s,
   jobTypes: Joi.array().items(Joi.string().valid('job', 'internship')),
 });
@@ -92,22 +99,25 @@ export const updateProfile = {
     disability: Joi.object({ status: s, type: s }),
     military: Joi.object({ status: s, serviceType: s }),
     englishFluency: s,
-    languages: stringList(30),
-    assets: stringList(40),
+    languages: stringList(10),
+    assets: stringList(25),
+    documents: stringList(35),
     hasTwoWheeler: Joi.boolean(),
     hasFourWheeler: Joi.boolean(),
     drivingLicense: s,
     resumeHeadline: Joi.string().trim().max(500).allow(''),
     profileSummary: Joi.string().trim().max(5000).allow(''),
     itSkills: stringList(15),
-    keySkills: stringList(15),
+    keySkills: stringList(20),
     totalExperience: Joi.object({ years: Joi.number().integer().min(0).max(60), months: Joi.number().integer().min(0).max(11) }),
     currentSalary: Joi.number().min(0).max(100000000),
     noticePeriod: s,
     industries: stringList(5),
-    departments: stringList(25),
-    roles: stringList(10),
-    certifications: stringList(30),
+    subIndustries: stringList(20),
+    departments: stringList(5),
+    functions: stringList(20),
+    roles: stringList(15),
+    certifications: stringList(10),
     preferences,
     socialProfiles: Joi.array().items(socialLink).max(15),
     portfolios: Joi.array()

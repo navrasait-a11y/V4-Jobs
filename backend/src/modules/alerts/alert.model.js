@@ -25,7 +25,9 @@ const jobAlertSchema = new Schema(
       expectedSalary: { min: Number, max: Number },
       locations: [placeSchema], // upto 3
       industries: [String], // upto 5
+      subIndustries: [String], // upto 20
       departments: [String], // upto 5
+      functions: [String], // upto 20
       roles: [String], // upto 10
       educationLevels: [String],
       degrees: [String],

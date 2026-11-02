@@ -17,6 +17,13 @@ import { validateUsername, assertIdentityAvailable } from '../users/account.serv
 
 const USER_FIELDS = ['fullName', 'displayName', 'username', 'gender', 'about', 'socialLinks', 'firstName', 'lastName'];
 
+/** Keeps the older relocation flags in step with the Excel "Ready To Relocate" options. */
+export function withRelocationFlags(prefs) {
+  if (!Array.isArray(prefs.relocation)) return prefs;
+  const yes = prefs.relocation.filter((r) => /^yes/i.test(r));
+  return { ...prefs, willingToRelocate: yes.length > 0, anywhereInIndia: yes.some((r) => /anywhere in india/i.test(r)) };
+}
+
 export async function getProfileDoc(userId) {
   let profile = await Candidate.findOne({ user: userId });
   if (!profile) profile = await Candidate.create({ user: userId });
@@ -37,6 +44,8 @@ export async function refreshDerived(user, profile) {
   const agg = (k) => [...new Set((profile.employments || []).flatMap((e) => e[k] || []).concat(profile[k] || []))].slice(0, 30);
   profile.industries = agg('industries');
   profile.departments = agg('departments');
+  profile.subIndustries = agg('subIndustries');
+  profile.functions = agg('functions');
   profile.roles = agg('roles');
   const completion = computeCompletion(user, profile);
   profile.profileCompletion = completion.score;
@@ -77,7 +86,7 @@ export async function updateProfile(req, body) {
     profilePatch.totalExperienceMonths = (profilePatch.totalExperience.years || 0) * 12 + (profilePatch.totalExperience.months || 0);
     delete profilePatch.totalExperience;
   }
-  if (profilePatch.preferences) profilePatch.preferences = { ...profile.preferences?.toObject?.(), ...profilePatch.preferences };
+  if (profilePatch.preferences) profilePatch.preferences = withRelocationFlags({ ...profile.preferences?.toObject?.(), ...profilePatch.preferences });
   profile.set(profilePatch);
 
   touchUsage('key_skill', body.keySkills || []);

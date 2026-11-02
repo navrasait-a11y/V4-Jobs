@@ -94,7 +94,8 @@ const meBody = Joi.object({
   about: Joi.string().trim().max(5000).allow(''),
   socialLinks: Joi.array().items(socialLink).max(15),
   designation: shortText.allow(''),
-  department: stringList(25),
+  department: stringList(5),
+  functions: stringList(20),
   hiringAuthority: shortText.allow(''),
   notificationPrefs: Joi.object({
     email: Joi.boolean(),
@@ -109,7 +110,7 @@ const meBody = Joi.object({
 
 r.patch('/me', authenticate, validate({ body: meBody }), async (req, res) => {
   const user = await User.findById(req.user._id);
-  const { designation, department, hiringAuthority, notificationPrefs, ...basic } = req.body;
+  const { designation, department, functions, hiringAuthority, notificationPrefs, ...basic } = req.body;
   if (basic.username && basic.username !== user.username) {
     validateUsername(basic.username);
     await assertIdentityAvailable({ username: basic.username }, user._id);
@@ -119,6 +120,7 @@ r.patch('/me', authenticate, validate({ body: meBody }), async (req, res) => {
   if (user.role === C.ROLES.EMPLOYER) {
     if (designation !== undefined) user.employer.designation = designation;
     if (department !== undefined) user.employer.department = department;
+    if (functions !== undefined) user.employer.functions = functions;
     if (hiringAuthority !== undefined) user.employer.hiringAuthority = hiringAuthority;
   }
   await user.save();

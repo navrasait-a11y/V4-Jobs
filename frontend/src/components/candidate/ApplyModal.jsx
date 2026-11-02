@@ -1,23 +1,42 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import Button from '../ui/Button';
 import { Alert, Modal } from '../ui/feedback';
-import { CheckboxField, FileDropzone, MobileField, SelectField, TextAreaField, TextField } from '../ui/form';
+import { CheckboxField, ChoiceChips, Field, FileDropzone, LocationField, MobileField, SelectField, SuggestField, TextAreaField, TextField } from '../ui/form';
+import HierarchyField from '../ui/HierarchyField';
 import { useAction, useLookups } from '../../hooks/useData';
 import { jobApi } from '../../services';
 import useAuthStore from '../../store/useAuthStore';
+import { DISTANCE_OPTIONS, EXPERIENCE_LEVEL_LABELS, EXPERIENCE_OPTIONS } from '../../utils/options';
 
+/** Screening question by type: single / multiple choice, short answer, text only, numbers only. */
 const QuestionField = ({ q, value, onChange }) => {
-  if (q.type === 'yes_no') return <SelectField label={q.question} required={q.required} options={['Yes', 'No']} value={value} onChange={(e) => onChange(e.target.value)} />;
-  if (q.type === 'choice') return <SelectField label={q.question} required={q.required} options={q.options || []} value={value} onChange={(e) => onChange(e.target.value)} />;
-  return <TextField label={q.question} required={q.required} type={q.type === 'number' ? 'number' : 'text'} value={value} onChange={(e) => onChange(e.target.value)} />;
+  const label = q.question;
+  if (q.type === 'yes_no') return <SelectField label={label} required={q.required} options={['Yes', 'No']} value={value} onChange={(e) => onChange(e.target.value)} />;
+  if (q.type === 'choice' || q.type === 'single_choice')
+    return (
+      <Field label={label} required={q.required}>
+        <ChoiceChips options={q.options || []} value={value} onChange={onChange} />
+      </Field>
+    );
+  if (q.type === 'multiple_choice')
+    return (
+      <Field label={label} required={q.required} hint="Pick all that apply">
+        <ChoiceChips multiple options={q.options || []} value={Array.isArray(value) ? value : []} onChange={onChange} />
+      </Field>
+    );
+  if (q.type === 'number')
+    return <TextField label={label} required={q.required} inputMode="decimal" value={value || ''} onChange={(e) => onChange(e.target.value.replace(/[^\d.-]/g, ''))} hint="Numbers only" />;
+  if (q.type === 'text') return <TextField label={label} required={q.required} value={value || ''} onChange={(e) => onChange(e.target.value.replace(/\d/g, ''))} hint="Text only" />;
+  return <TextField label={label} required={q.required} value={value || ''} onChange={(e) => onChange(e.target.value)} maxLength={500} />;
 };
 
 const Questions = ({ job, answers, setAnswers }) =>
-  (job.questions || []).map((q) => <QuestionField key={q.question} q={q} value={answers[q.question] || ''} onChange={(v) => setAnswers((a) => ({ ...a, [q.question]: v }))} />);
+  (job.questions || []).map((q) => <QuestionField key={q.question} q={q} value={answers[q.question]} onChange={(v) => setAnswers((a) => ({ ...a, [q.question]: v }))} />);
 
-const toAnswers = (answers) => Object.entries(answers).map(([question, answer]) => ({ question, answer }));
+const toAnswers = (answers) => Object.entries(answers).map(([question, answer]) => ({ question, answer: answer ?? '' }));
+const missingAnswer = (job, answers) => (job.questions || []).find((q) => q.required && !(Array.isArray(answers[q.question]) ? answers[q.question].length : String(answers[q.question] ?? '').trim()));
 
 /** Logged-in apply: profile resume by default, optional cover letter and replacement resume. */
 const CandidateApply = ({ job, onClose, onApplied, eventId }) => {
@@ -51,7 +70,9 @@ const CandidateApply = ({ job, onClose, onApplied, eventId }) => {
         className="space-y-4"
         onSubmit={(e) => {
           e.preventDefault();
-          apply.mutate();
+          const missing = missingAnswer(job, answers);
+          if (missing) return toast.error(`Please answer: ${missing.question}`);
+          return apply.mutate();
         }}
       >
         <Questions job={job} answers={answers} setAnswers={setAnswers} />
@@ -71,74 +92,248 @@ const CandidateApply = ({ job, onClose, onApplied, eventId }) => {
   );
 };
 
-/** Apply without login: OTP on mobile, then a full session is created by the API. */
+const DRAFT_KEY = 'fjw.applyDraft';
+const GUEST_BLANK = {
+  experienceLevel: '',
+  experienceMonths: '',
+  fullName: '',
+  gender: '',
+  email: '',
+  mobile: '',
+  dob: '',
+  preferredLocations: [],
+  distanceKm: '',
+  relocation: [],
+  currentJobTitle: '',
+  keySkills: [],
+  industries: [],
+  subIndustries: [],
+  roles: [],
+  departments: [],
+  functions: [],
+  currentSalary: '',
+  heardFrom: '',
+  consentCommunication: true,
+  acceptTerms: false,
+  otp: '',
+};
+const readDraft = () => {
+  try {
+    return JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null') || {};
+  } catch {
+    return {};
+  }
+};
+const writeDraft = (v) => {
+  try {
+    if (v) localStorage.setItem(DRAFT_KEY, JSON.stringify(v));
+    else localStorage.removeItem(DRAFT_KEY);
+  } catch {
+    /* storage blocked */
+  }
+};
+
+/**
+ * Job Apply Form without login ("Other Forms" Excel): candidate details, preferred job criteria,
+ * consents, "Apply Now" -> "Enter OTP & Verify" -> "Setup Profile and Job Preference".
+ */
 const GuestApply = ({ job, onClose, onApplied, eventId }) => {
   const setSession = useAuthStore((s) => s.setSession);
-  const lookups = useLookups('gender', 'experience_level');
-  const [form, setForm] = useState({ fullName: '', mobile: '', email: '', gender: '', experienceLevel: '', otp: '', acceptTerms: false });
+  const lookups = useLookups('experience_level', 'heard_from', 'relocate_option');
+  const [form, setForm] = useState(() => ({ ...GUEST_BLANK, ...readDraft(), otp: '' }));
   const [answers, setAnswers] = useState({});
   const [resume, setResume] = useState(null);
   const [otpSent, setOtpSent] = useState(false);
+  const [applied, setApplied] = useState(null);
   const [errors, setErrors] = useState({});
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e?.target ? (e.target.type === 'checkbox' ? e.target.checked : e.target.value) : e }));
+  const fresher = form.experienceLevel === 'Fresher';
+
+  // "Draft or Resume Form In Case of any Error"
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const { otp: _o, acceptTerms: _a, ...rest } = form;
+      writeDraft(rest);
+    }, 600);
+    return () => clearTimeout(t);
+  }, [form]);
+
+  const relocation = (values) => {
+    const added = values.find((v) => !form.relocation.includes(v));
+    set('relocation')(added && /^no/i.test(added) ? [added] : values.filter((v) => !/^no/i.test(v) || !added));
+  };
 
   const sendOtp = useAction(() => jobApi.guestOtp(job._id, form.mobile), { success: 'OTP sent to your mobile', onSuccess: () => setOtpSent(true) });
-  const apply = useAction(() => jobApi.guestApply(job._id, { ...form, acceptTerms: form.acceptTerms, answers: toAnswers(answers), resume, eventId }), {
-    success: 'Application submitted. Your account is ready',
-    onSuccess: (data) => {
-      setSession(data);
-      onApplied();
+  const apply = useAction(
+    () => {
+      const { experienceMonths, distanceKm, currentSalary, otp, ...rest } = form;
+      return jobApi.guestApply(job._id, {
+        ...rest,
+        otp,
+        dob: rest.dob || undefined,
+        totalExperienceMonths: fresher ? 0 : experienceMonths ? Number(experienceMonths) : undefined,
+        distanceKm: distanceKm ? Number(distanceKm) : undefined,
+        currentSalary: currentSalary ? Number(currentSalary) : undefined,
+        answers: toAnswers(answers),
+        resume,
+        eventId,
+      });
     },
-    onError: (e) => setErrors(e.fieldErrors || {}),
-  });
+    {
+      silent: true,
+      onSuccess: (data) => {
+        writeDraft(null);
+        setSession(data);
+        setApplied(data);
+      },
+      onError: (e) => {
+        setErrors(e.fieldErrors || {});
+        toast.error(e.message);
+      },
+    },
+  );
   const submit = (e) => {
     e.preventDefault();
-    if (otpSent) apply.mutate();
-    else sendOtp.mutate();
+    const missing = missingAnswer(job, answers);
+    if (missing) return toast.error(`Please answer: ${missing.question}`);
+    if (!/^[6-9]\d{9}$/.test(form.mobile)) return setErrors({ mobile: 'Enter a valid 10 digit mobile number' });
+    setErrors({});
+    return otpSent ? apply.mutate() : sendOtp.mutate();
   };
+
+  if (applied) {
+    return (
+      <Modal open onClose={onApplied} title="Application submitted" subtitle={job.title}>
+        <div className="space-y-4">
+          <Alert tone="success">Your account is ready and your application has reached {job.orgSnapshot?.name || 'the employer'}.</Alert>
+          <p className="text-sm text-brand-gray">Complete your profile and job preferences to get matching jobs and more recruiter views.</p>
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="primary" size="sm">
+              <Link to="/candidate/complete-profile">Setup profile and job preference</Link>
+            </Button>
+            <Button variant="outline" size="sm" onClick={onApplied}>
+              Later
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    );
+  }
 
   return (
     <Modal
       open
+      size="lg"
       onClose={onClose}
       title={`Apply to ${job.title}`}
-      subtitle="No account needed"
+      subtitle="No account needed. Your answers are saved on this device until you apply"
       footer={
         <Button type="submit" form="guest-apply" variant="primary" size="sm" loading={apply.isPending || sendOtp.isPending}>
-          {otpSent ? 'Submit application' : 'Send OTP'}
+          {otpSent ? 'Verify & apply' : 'Apply now'}
         </Button>
       }
     >
-      <form id="guest-apply" onSubmit={submit} className="space-y-4">
+      <form id="guest-apply" onSubmit={submit} className="space-y-5">
         <p className="text-sm text-brand-gray">
           Have an account?{' '}
           <Link to="/login" state={{ from: `/jobs/${job.slug}` }} className="font-semibold text-brand-blue">
             Log in
           </Link>
         </p>
-        <TextField label="Full name" required value={form.fullName} onChange={set('fullName')} error={errors.fullName} />
-        <MobileField required value={form.mobile} onChange={set('mobile')} disabled={otpSent} error={errors.mobile} />
-        <TextField label="Email" required type="email" value={form.email} onChange={set('email')} error={errors.email} />
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <SelectField label="Gender" options={lookups.gender} value={form.gender} onChange={set('gender')} />
-          <SelectField label="Experience" options={lookups.experience_level} value={form.experienceLevel} onChange={set('experienceLevel')} />
+
+        <section className="space-y-4">
+          <h3 className="text-sm font-semibold text-brand-dark">Candidate details</h3>
+          <Field label="Experience level" required>
+            <ChoiceChips options={lookups.experience_level.map((v) => ({ value: v, label: EXPERIENCE_LEVEL_LABELS[v] || v }))} value={form.experienceLevel} onChange={set('experienceLevel')} />
+          </Field>
+          {!fresher && form.experienceLevel && <SelectField label="Duration of experience" options={EXPERIENCE_OPTIONS.slice(1)} value={form.experienceMonths} onChange={set('experienceMonths')} />}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <TextField label="Full name" required value={form.fullName} onChange={set('fullName')} error={errors.fullName} />
+            <Field label="Gender">
+              <ChoiceChips options={['Male', 'Female', 'Other']} value={form.gender} onChange={set('gender')} />
+            </Field>
+            <TextField label="Email ID" required type="email" value={form.email} onChange={set('email')} error={errors.email} />
+            <MobileField required value={form.mobile} onChange={set('mobile')} disabled={otpSent} error={errors.mobile} />
+            <TextField label="Date of birth" type="date" max={new Date()} openTo="year" value={form.dob} onChange={set('dob')} />
+            <SuggestField label="Current job title" lookup="job_title" allowCreate value={form.currentJobTitle} onChange={set('currentJobTitle')} placeholder="Type or select" />
+          </div>
+          <LocationField label="Preferred job locations" multiple max={4} value={form.preferredLocations} onChange={set('preferredLocations')} hint="Up to 4" />
+          <SelectField label="Show jobs within" options={DISTANCE_OPTIONS} value={form.distanceKm} onChange={set('distanceKm')} placeholder="Only these locations" />
+          <Field label="Ready to relocate" hint="Up to 4">
+            <ChoiceChips multiple max={4} options={lookups.relocate_option} value={form.relocation} onChange={relocation} />
+          </Field>
+          {resume ? (
+            <Alert tone="success">
+              {resume.name}{' '}
+              <button type="button" className="font-semibold underline" onClick={() => setResume(null)}>
+                Remove
+              </button>
+            </Alert>
+          ) : (
+            <FileDropzone accept=".pdf,.doc,.docx" maxSizeMb={5} onFile={setResume} hint="PDF or Word up to 5 MB" label="Upload your resume" />
+          )}
+        </section>
+
+        <section className="space-y-4">
+          <h3 className="text-sm font-semibold text-brand-dark">Preferred job criteria</h3>
+          <SuggestField label="Key skills" lookup="key_skill" limit={20} multiple max={20} allowCreate value={form.keySkills} onChange={set('keySkills')} hint={`${form.keySkills.length}/20`} />
+          <HierarchyField kind="industry" label="Preferred industry" value={{ parents: form.industries, children: form.subIndustries }} onChange={({ parents, children }) => setForm((f) => ({ ...f, industries: parents, subIndustries: children }))} />
+          <SuggestField label="Preferred job roles" lookup="job_role" limit={20} multiple max={15} value={form.roles} onChange={set('roles')} hint={`Up to 15 (${form.roles.length}/15)`} />
+          <HierarchyField kind="department" label="Preferred department" value={{ parents: form.departments, children: form.functions }} onChange={({ parents, children }) => setForm((f) => ({ ...f, departments: parents, functions: children }))} />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <TextField label="Monthly in-hand salary" type="number" min="0" value={form.currentSalary} onChange={set('currentSalary')} placeholder="25000" />
+            <SelectField label="How did you hear about us?" options={lookups.heard_from} value={form.heardFrom} onChange={set('heardFrom')} />
+          </div>
+        </section>
+
+        {(job.questions || []).length > 0 && (
+          <section className="space-y-4">
+            <h3 className="text-sm font-semibold text-brand-dark">Questions from the employer</h3>
+            <Questions job={job} answers={answers} setAnswers={setAnswers} />
+          </section>
+        )}
+
+        <div className="space-y-2">
+          <CheckboxField checked={form.consentCommunication} onChange={set('consentCommunication')} label="I agree to receive important updates via SMS, Email & WhatsApp." />
+          <CheckboxField
+            required
+            checked={form.acceptTerms}
+            onChange={set('acceptTerms')}
+            label={
+              <>
+                By clicking Apply Now, you agree to the{' '}
+                <Link to="/legal/privacy-policy" target="_blank" className="text-brand-blue underline">
+                  Privacy Policy
+                </Link>{' '}
+                and{' '}
+                <Link to="/legal/terms-and-conditions" target="_blank" className="text-brand-blue underline">
+                  Terms &amp; Conditions
+                </Link>{' '}
+                of Freejobwala.
+              </>
+            }
+          />
         </div>
-        <Questions job={job} answers={answers} setAnswers={setAnswers} />
-        {resume ? <Alert tone="success">{resume.name}</Alert> : <FileDropzone accept=".pdf,.doc,.docx" maxSizeMb={5} onFile={setResume} hint="PDF, DOC or DOCX up to 5 MB" label="Upload your resume" />}
-        {otpSent && <TextField label="OTP" required inputMode="numeric" autoComplete="one-time-code" value={form.otp} onChange={set('otp')} error={errors.otp} />}
-        <CheckboxField
-          required
-          checked={form.acceptTerms}
-          onChange={set('acceptTerms')}
-          label={
-            <>
-              I accept the{' '}
-              <Link to="/legal/terms-and-conditions" target="_blank" className="text-brand-blue underline">
-                Terms
-              </Link>
-            </>
-          }
-        />
+        {otpSent && (
+          <Field label="Enter OTP & verify" required error={errors.otp} hint={`Sent to +91 ${form.mobile}`}>
+            <div className="flex flex-wrap items-center gap-2">
+              <TextField className="w-40" required inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={form.otp} onChange={(e) => set('otp')(e.target.value.replace(/\D/g, ''))} aria-label="OTP" />
+              <Button size="sm" variant="ghost" loading={sendOtp.isPending} onClick={() => sendOtp.mutate()}>
+                Resend OTP
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setOtpSent(false);
+                  set('otp')('');
+                }}
+              >
+                Change number
+              </Button>
+            </div>
+          </Field>
+        )}
       </form>
     </Modal>
   );
@@ -146,7 +341,9 @@ const GuestApply = ({ job, onClose, onApplied, eventId }) => {
 
 const ApplyModal = (props) => {
   const user = useAuthStore((s) => s.user);
-  return user ? <CandidateApply {...props} /> : <GuestApply {...props} />;
+  // Fixed at open: a guest who applies gets a session but should still see the success step.
+  const [guest] = useState(!user);
+  return guest ? <GuestApply {...props} /> : <CandidateApply {...props} />;
 };
 
 export default ApplyModal;

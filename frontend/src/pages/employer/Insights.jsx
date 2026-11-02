@@ -131,10 +131,10 @@ export const Reports = () => {
       </Section>
       <Section title="Team usage" className="mt-4">
         <DataTable
-          rowKey={(m) => m.member?._id || m._id}
+          rowKey={(m) => String(m.member)}
           columns={[
-            { key: 'name', header: 'Member', render: (m) => m.member?.fullName || m.fullName },
-            ...['job_post', 'resume_view', 'resume_download', 'invite'].map((k) => ({ key: k, header: titleCase(k), render: (m) => m.usage?.[k]?.monthly ?? m[k] ?? 0 })),
+            { key: 'name', header: 'Member', render: (m) => m.user?.fullName || '—' },
+            ...['job_post', 'resume_view', 'resume_download', 'invite'].map((k) => ({ key: k, header: titleCase(k), render: (m) => m.usage?.[k] ?? 0 })),
           ]}
           rows={usage.data?.members}
           query={usage}

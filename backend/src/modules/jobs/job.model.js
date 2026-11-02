@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { JOB_KIND, JOB_STATUS } from '../../shared/constants/index.js';
+import { JOB_KIND, JOB_STATUS, QUESTION_TYPES, LEGACY_QUESTION_TYPES } from '../../shared/constants/index.js';
 
 const { Schema } = mongoose;
 
@@ -18,7 +18,7 @@ const placeSchema = new Schema(
 
 const questionSchema = new Schema({
   question: { type: String, required: true, maxlength: 500 },
-  type: { type: String, enum: ['text', 'yes_no', 'number', 'choice'], default: 'text' },
+  type: { type: String, enum: [...QUESTION_TYPES, ...LEGACY_QUESTION_TYPES], default: 'short_answer' },
   options: [String],
   required: Boolean,
 });
@@ -40,7 +40,9 @@ const jobSchema = new Schema(
     responsibilities: { type: String, maxlength: 20000 },
     keySkills: { type: [String], index: true },
     industries: [String],
+    subIndustries: [String],
     departments: [String],
+    functions: [String],
     roles: [String],
     category: { type: String, index: true }, // IT / Non IT ...
     employmentTypes: [String],
@@ -49,7 +51,7 @@ const jobSchema = new Schema(
     openings: { type: Number, default: 1, min: 1 },
 
     experience: { min: { type: Number, default: 0 }, max: Number }, // years
-    experienceLevels: [String], // Fresher, Experienced ...
+    experienceLevels: [String], // Fresher, Experienced ... (years may be fractional: 1 month = 1/12)
     salary: {
       min: Number,
       max: Number,
@@ -60,23 +62,72 @@ const jobSchema = new Schema(
     },
     perks: [String],
     // Internship-only
-    stipend: { min: Number, max: Number, type: { type: String } },
-    duration: { value: Number, unit: { type: String, enum: ['days', 'weeks', 'months'] } },
+    internshipType: String, // Full Time / Part Time
+    stipend: { paid: { type: Boolean, default: true }, min: Number, max: Number, type: { type: String }, hidden: { type: Boolean, default: false } },
+    duration: { value: Number, unit: { type: String, enum: ['days', 'weeks', 'months'] }, noFixed: Boolean },
     internshipStartDate: Date,
 
-    education: { levels: [String], degrees: [String], specialisations: [String] },
-    gender: { type: String, default: 'any' },
-    ageRange: { min: Number, max: Number },
+    education: {
+      levels: [String],
+      degrees: [String],
+      specialisations: [String],
+      institutions: [String],
+      types: [String],
+      statuses: [String],
+      mediums: [String],
+      marksType: String,
+      marksValue: String, // grade, % or CGPA as typed
+    },
+    certifications: [String],
+    // Candidate diversity & other criteria (empty = any)
+    gender: { type: String, default: 'any' }, // legacy single value; `genders` wins
+    genders: [String],
+    maritalStatuses: [String],
+    ageRange: { min: Number, max: Number }, // max 61 = 60+ (no upper limit)
+    englishFluency: [String],
     languages: [String],
+    diversity: [String],
+    disabilityStatuses: [String],
+    disabilityTypes: [String],
     assets: [String],
-    noticePeriod: String,
+    noticePeriod: String, // legacy single value
+    noticePeriods: [String],
 
     locations: [placeSchema],
+    distanceKm: Number, // show candidates within N km of the job locations
+    relocateOptions: [String],
     address: String,
     isRemote: { type: Boolean, default: false },
 
     consultancyClient: { name: String, hideName: { type: Boolean, default: true }, industry: String }, // for consultancies hiring for a client
-    contact: { name: String, email: String, mobile: String, showToCandidates: { type: Boolean, default: false } },
+    contact: {
+      name: String,
+      email: String,
+      mobile: String,
+      showToCandidates: { type: Boolean, default: false },
+      timeFrom: String, // 09:30 AM
+      timeTo: String,
+      dayFrom: String, // Monday
+      dayTo: String,
+    },
+    interviewMode: String, // Walk-in / Candidates Can Call Me Directly / ... (lookup interview_mode)
+    walkIn: {
+      startDate: Date,
+      endDate: Date,
+      durationDays: Number,
+      timing: String,
+      contactName: String,
+      contactMobile: String,
+      contactEmail: String,
+      venue: String,
+      mapUrl: String,
+    },
+    responseAlerts: {
+      daily: { type: Boolean, default: false }, // daily response summary to the poster
+      everyResponse: { type: Boolean, default: false }, // e-mail on every new response
+      emails: [String], // extra recipients
+    },
+    callbackRequests: { type: Number, default: 0 },
     questions: [questionSchema],
     applyExternalUrl: String,
 

@@ -66,7 +66,9 @@ const organizationSchema = new Schema(
     employerType: String, // Indian MNC, Foreign MNC, Govt / PSU, Startup, Unicorn, Corporate, Consultancy
     organizationType: String, // Private Limited, Public Limited, LLP ...
     industries: [String],
+    subIndustries: [String],
     departments: [String],
+    functions: [String],
     employeeCount: String, // 0-10, 11-25 ...
     foundedDate: Date,
     website: String,

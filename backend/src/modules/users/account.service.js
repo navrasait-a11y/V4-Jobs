@@ -174,6 +174,7 @@ export async function createEmployerAccount(data, { source = 'direct', ip, statu
           password: data.password,
           googleId: data.googleId,
           emailVerifiedAt: data.emailVerified ? new Date() : undefined,
+          mobileVerifiedAt: data.mobileVerified ? new Date() : undefined,
           status: USER_STATUS.ACTIVE,
           source,
           heardFrom: data.heardFrom,

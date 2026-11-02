@@ -79,6 +79,41 @@ export const JobCandidates = ({ job, onClose }) => {
   );
 };
 
+/** Excel: "Assign Relevant Jobs to the Candidates from Admin Panel". Sends picked active jobs to one alert. */
+export const AlertSendJobs = ({ alert, onClose }) => {
+  const [q, setQ] = useState(alert.criteria?.jobTitle || alert.criteria?.keySkills?.[0] || '');
+  const [picked, setPicked] = useState([]);
+  const found = useQuery({ queryKey: ['admin', 'pick-jobs', q], queryFn: () => adminApi.list('/jobs', { q: q || undefined, status: 'active', limit: 20 }) });
+  const send = useAction(() => adminApi.post('/job-alerts/send-jobs', { alertIds: [alert._id], jobIds: picked }), { ...inv, success: 'Jobs sent to the job seeker', onSuccess: onClose });
+  const toggle = (id) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : p.length >= 50 ? p : [...p, id]));
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Send matching jobs"
+      subtitle={alert.name}
+      size="lg"
+      footer={
+        <Button size="sm" variant="primaryBlue" disabled={!picked.length} loading={send.isPending} onClick={() => send.mutate()}>
+          Send {picked.length || ''} job{picked.length === 1 ? '' : 's'}
+        </Button>
+      }
+    >
+      <div className="space-y-3">
+        <TextField label="Search active jobs" value={q} onChange={(e) => setQ(e.target.value)} hint="Pre-filled from the alert. Up to 50 jobs per send" />
+        <ul className="max-h-72 divide-y divide-brand-border overflow-y-auto rounded-md border border-brand-border">
+          {(found.data?.data || []).map((j) => (
+            <li key={j._id} className="px-3 py-2">
+              <CheckboxField label={j.title} description={[j.orgSnapshot?.name, (j.locations || []).map((l) => l.city).filter(Boolean).join(', ')].filter(Boolean).join(' · ')} checked={picked.includes(j._id)} onChange={() => toggle(j._id)} />
+            </li>
+          ))}
+          {found.data && !found.data.data?.length && <li className="px-3 py-6 text-center text-sm text-brand-gray">No active job matches this search.</li>}
+        </ul>
+      </div>
+    </Modal>
+  );
+};
+
 /** Upload field for images stored through the CMS media endpoint. */
 export const MediaField = ({ label, value, onChange }) => {
   const upload = useAction((file) => adminApi.upload('/cms/media', { file }), { onSuccess: (m) => onChange({ key: m.key, url: m.url }) });

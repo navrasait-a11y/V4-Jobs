@@ -33,7 +33,9 @@ const employmentSchema = new Schema({
   description: { type: String, maxlength: 30000 }, // "upto 4000 words"
   skills: [String],
   industries: [String],
+  subIndustries: [String], // Excel: up to 20 sub selections under the chosen industries
   departments: [String],
+  functions: [String], // Excel: up to 20 functions under the chosen departments
   roles: [String],
 });
 
@@ -75,7 +77,8 @@ const candidateSchema = new Schema(
     military: { status: String, serviceType: String },
     englishFluency: String,
     languages: [String],
-    assets: [String], // Laptop, Smart Phone, Bike, Driving licences ...
+    assets: [String], // WiFi, Laptop, Bike ... (lookup asset)
+    documents: [String], // Aadhar, PAN, driving licences ... (lookup candidate_document)
     hasTwoWheeler: Boolean,
     hasFourWheeler: Boolean,
     drivingLicense: String,
@@ -97,7 +100,9 @@ const candidateSchema = new Schema(
     noticePeriod: String,
     employments: [employmentSchema],
     industries: [String],
+    subIndustries: [String],
     departments: [String],
+    functions: [String],
     roles: [String],
 
     // Education
@@ -108,7 +113,9 @@ const candidateSchema = new Schema(
     // Preferences
     preferences: {
       jobModes: [String],
-      locations: [placeSchema], // upto 4 (Excel shows 3 - API allows 4 per PRD)
+      locations: [placeSchema], // upto 4 ("Other Forms" Excel)
+      relocation: [String], // upto 4 of lookup relocate_option
+      distanceKm: Number, // "Show Jobs within"
       willingToRelocate: { type: Boolean, default: false },
       anywhereInIndia: { type: Boolean, default: false },
       expectedSalary: Number,
@@ -116,7 +123,9 @@ const candidateSchema = new Schema(
       shifts: [String],
       skills: [String],
       industries: [String],
+      subIndustries: [String],
       departments: [String],
+      functions: [String],
       roles: [String],
       noticePeriod: String,
       jobTypes: [String], // job / internship

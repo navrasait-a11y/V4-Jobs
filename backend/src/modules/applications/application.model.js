@@ -102,6 +102,7 @@ const candidateTrackingSchema = new Schema(
   {
     organization: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
     candidate: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    stage: String, // lookup candidate_stage ("Mark Candidate Status / Interview Stage")
     screeningStatus: { type: String, enum: SCREENING_STATUS },
     callingStatus: { type: String, enum: CALLING_STATUS },
     messagingStatus: [{ type: String, enum: MESSAGING_STATUS }],

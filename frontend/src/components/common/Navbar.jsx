@@ -18,7 +18,7 @@ const jobsMenu = {
   ],
   'Jobs in demand': [
     ['Fresher jobs', '/jobs?experience=0'],
-    ['MNC jobs', '/jobs?companyType=MNC'],
+    ['MNC jobs', '/jobs?companyType=Indian MNC|Foreign MNC'],
     ['Remote jobs', '/jobs?remoteOnly=true'],
     ['Work from home jobs', '/jobs?category=Work From Home Jobs'],
     ['Walk-in events', '/events'],

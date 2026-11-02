@@ -54,8 +54,8 @@ For the **Android / iOS app team**. Per the PRD, the app covers the **Job Seeker
 
 * Resume: PDF / DOC / DOCX, **max 5 MB**. Photo: JPG / PNG / WEBP, max 5 MB. Chat attachment: image / PDF / DOC, max 10 MB.
 * The server checks real file content, so a renamed file is rejected.
-* Public images (logos, avatars) have a permanent `url`.
-* Resume and chat file links are **temporary** (10–60 min). Do not store them. Re-fetch when needed.
+* Public images (logos, avatars, banners) have a permanent `url` on the media domain. Use it as returned, never build it yourself.
+* Resume, KYC and chat file links are **signed and temporary** (10–60 min). Do not store them. Re-fetch when needed. They point directly at file storage, so do **not** send the `Authorization` header to them.
 
 ---
 
@@ -132,6 +132,8 @@ Rules:
 
 After registration, show the **"Enter OTP & Verify"** screen and call `/auth/mobile/verify`.
 
+**Accounts without a mobile or e-mail:** a Google sign-up may have no mobile number. If `user.mobile` is empty, ask for it and use `/auth/contact/change` → `/auth/contact/confirm`. This adds the contact and marks it verified. `/auth/mobile/send-otp` only works when the account already has a mobile (`400` otherwise).
+
 **Auth success `data`:**
 
 ```json
@@ -175,7 +177,7 @@ After registration, show the **"Enter OTP & Verify"** screen and call `/auth/mob
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/master-data/bulk?types=a,b,c` | Many lists in one call (≤30 types) → `{ type: [{ _id, name, parent }] }` |
-| GET | `/master-data/:type?q=&parent=&limit=50` | Type-ahead search |
+| GET | `/master-data/:type?q=&parents=&limit=50` | Type-ahead search. `parents=A|B` (pipe-separated parent names, up to 10) returns the children of those parents with `parentName` on each item: `sub_industry` (parents: industries), `department_function` (parents: departments), `degree` (parents: education levels), `specialisation` (parents: degree names, or `Level>Degree` such as `Graduate>B.Com` because a course name can repeat across levels) |
 | POST | `/master-data/:type/suggest` | `{ name }` – "Add new option" (only `job_title, key_skill, it_skill, institution, company_name, certification`) |
 | GET | `/locations?q=jaip&limit=20` | `displayName` e.g. "Jagatpura, Jaipur, Rajasthan, India" |
 | GET | `/locations/states`, `/locations/cities?state=` | |
@@ -184,10 +186,10 @@ Useful types for candidate screens:
 * `experience_level, journey_status, present_job_status, heard_from, gender, marital_status, guardian_relation, caste_category`
 * `disability_status, disability_type, military_status, service_type, english_fluency, language, asset`
 * `job_title, key_skill, it_skill, company_name, employer_type, employment_type, job_mode, shift, salary_type, perk, notice_period`
-* `industry, department` → `job_role` (via `parent`), `education_level` → `degree` → `specialisation`
+* `industry` → `sub_industry`, `department` → `department_function` (pick up to 5 parents and up to 20 children), `job_role` (flat list, up to 10), `education_level` → `degree` → `specialisation`
 * `institution, education_status, education_type, education_medium, marks_type, certification, social_platform, job_category`
 
-Send the option **`name`** string in requests. Limits: key skills ≤ 15, IT skills ≤ 15, industries ≤ 5, job roles ≤ 10, preferred locations ≤ 4, job modes ≤ 3 per employment.
+Send the option **`name`** string in requests. Limits (from the client's Excel, enforced by the API): key skills ≤ 15, IT skills ≤ 15, industries ≤ 5, departments ≤ 5, job roles ≤ 10, languages ≤ 10, assets ≤ 10, certifications ≤ 10, preferred locations ≤ 3, preferred job modes ≤ 3, preferred shifts ≤ 3, job modes ≤ 3 per employment.
 
 ---
 
@@ -216,14 +218,14 @@ Send the option **`name`** string in requests. Limits: key skills ≤ 15, IT ski
 * **Journey:** `experienceLevel, journeyStatus, presentJobStatus, availabilityStatus (open_to_work | not_available | serving_notice)`
 * **Personal:** `dob, maritalStatus, guardianRelation, guardianName, category, currentLocation, hometown, disability{status,type}, military{status,serviceType}, englishFluency, languages[], assets[], hasTwoWheeler, hasFourWheeler, drivingLicense`
 * **Resume:** `resumeHeadline, profileSummary, keySkills[], itSkills[], certifications[]`
-* **Work:** `totalExperience{years,months}, currentSalary (monthly in-hand), noticePeriod, industries[], departments[], roles[]`
-* **Preferences:** `preferences{ jobModes[], locations[] (≤4), willingToRelocate, anywhereInIndia, expectedSalary, employmentTypes[], shifts[], skills[], industries[], departments[], roles[], noticePeriod, jobTypes['job','internship'] }`
+* **Work:** `totalExperience{years,months}, currentSalary (monthly in-hand), noticePeriod, industries[], subIndustries[] (≤20), departments[], functions[] (≤20), roles[]`
+* **Preferences:** `preferences{ jobModes[] (≤3), locations[] (≤3), willingToRelocate, anywhereInIndia, expectedSalary, employmentTypes[], shifts[], skills[], industries[], subIndustries[], departments[], functions[], roles[], noticePeriod, jobTypes['job','internship'] }`
 * **Social / portfolio:** `socialProfiles[{platform,url}], portfolios[{name,url}]`
 * **Settings:** `notificationPrefs{ email, sms, whatsapp, push, jobAlerts, recruiterMessages, marketing }, privacy{ profileVisibility: public|recruiters|hidden, showContact }`
 
 Location object: `{ locality, district, city, state, country, pincode }`.
 
-**Employment:** `jobTitle*, employerName*, employerType, employmentType, jobModes[], location{}, shift, isCurrent, startDate, endDate (omit when isCurrent), salaryType, monthlySalary, perks[], noticePeriod, description, skills[], industries[], departments[], roles[]`.
+**Employment:** `jobTitle*, employerName*, employerType, employmentType, jobModes[], location{}, shift, isCurrent, startDate, endDate (omit when isCurrent), salaryType, monthlySalary, perks[], noticePeriod, description, skills[], industries[], subIndustries[], departments[], functions[], roles[]`.
 **Education:** `level*, degree, specialisation, institution, status (Pursuing / Pass Out), startDate, endDate, educationType, medium, marksType, marks, isHighest`.
 Month-year pickers: send the 1st of the month, e.g. `"2023-06-01"`.
 
@@ -256,9 +258,9 @@ Set the correct `contentType`: `application/pdf`, `application/msword` or `appli
 | Group | Params |
 |---|---|
 | Keywords and type | `q`, `kind=job\|internship\|any` |
-| Location | `location` (cities or states), `includeRemote` |
+| Location | `location` (cities or states), `includeRemote=true` (add remote jobs to a location search), `remoteOnly=true` (remote jobs only) |
 | Experience and pay | `experience` (years), `salaryMin`, `salaryMax` (monthly), `stipendMin`, `durationMax` (internship months) |
-| Side filters | `workMode`, `department`, `role`, `industry`, `employmentType`, `education`, `skills`, `shift`, `category` (IT Jobs / Non IT Jobs / Work From Home Jobs …) |
+| Side filters | `workMode`, `department`, `function`, `role`, `industry`, `subIndustry`, `employmentType`, `education`, `skills`, `shift`, `category` (IT Jobs / Non IT Jobs / Work From Home Jobs …) |
 | Employer | `companyType`, `postedBy=company\|consultancy`, `organization` (employer id), `topCompanies=true`, `verifiedOnly=true` |
 | Labels | `label=premium,featured,urgent,actively_hiring` |
 | Freshness and sort | `freshness=1\|3\|7\|15\|30` (days), `sort=relevance\|date\|salary` |
@@ -369,6 +371,7 @@ REST:
 | POST | `/chat/conversations` | `{ organizationId, message? }` – only with employers you applied to or got an invite from |
 | POST | `/chat/support` | `{ subject?, message? }` – **Customer support chat** with the admin |
 | POST | `/assistant/message` | `{ message }` (max 500 chars, token optional, 20 per minute) → `{ text, jobs?, links?: [{ label, to }], suggestions?, handoff? }`. Instant help answers. When `handoff` is true, offer the support chat. `links[].to` are web paths: map them to app screens |
+| GET | `/chat/conversations/:id` | One conversation |
 | GET | `/chat/conversations/:id/messages?before=<ISO>&limit=30` | Oldest → newest. For older pages pass the first loaded message's `createdAt` as `before` |
 | POST | `/chat/attachments` | multipart `file` (image / PDF / DOC ≤ 10 MB) → `{ key, name, mime, size, url }` |
 | POST | `/chat/conversations/:id/messages` | `{ body?, attachments?:[{key,name,mime,size}], clientId? }` |
@@ -428,7 +431,7 @@ socket.on('notification:new', (n) {});    // live in-app notification
 | POST | `/billing/verify` | `{ orderId, razorpayOrderId, razorpayPaymentId, razorpaySignature }` |
 | GET | `/billing/subscriptions` | Active package (`active.endsAt`) |
 | GET | `/billing/orders` | Transactions, with the invoice id |
-| GET | `/billing/invoices/:id` | JSON invoice. `?format=html` gives a printable GST invoice (send the auth header, e.g. render in a WebView) |
+| GET | `/billing/invoices/:id` | JSON invoice. `?format=pdf` downloads the GST invoice as a PDF (use this for the Download button, with the auth header). `?format=html` gives the preview page (load it in a WebView with the auth header) |
 | GET | `/billing/wallet` | `{ balance, transactions }` (referral rewards) |
 
 Flow with `razorpay_flutter`:
@@ -475,6 +478,10 @@ await api.post('/billing/verify', data: {'orderId': res['data']['order']['_id'],
 | GET | `/moderation/comments/mine` | ✔ | The candidate's own reviews |
 | DELETE | `/moderation/comments/:id` | ✔ | Remove own review |
 | PATCH | `/billing/subscriptions/:id/auto-renew` | ✔ | `{ autoRenew }`. Renews from the wallet before expiry |
+| PATCH | `/me` | ✔ | Basic account fields shared by all roles. For candidates, prefer `PATCH /candidates/me` |
+| POST | `/me/avatar` | ✔ | Multipart field `avatar`. For candidates, prefer `POST /candidates/me/avatar` |
+
+`/files/download` is used only by local development storage. Production file links are signed storage URLs.
 
 Not for the app: `/auth/register/employer`, `/jobs/guest-post`, `/cms/sales-enquiry`, `/analytics/employer`, `/employer/*` and `/admin/*` are web panel APIs. `/webhooks/brevo` and `/billing/webhooks/razorpay` are called by providers. `/jobs/sitemap.xml` and `/jobs/:idOrSlug/google-jobs` are for web SEO.
 
@@ -493,3 +500,4 @@ Not for the app: `/auth/register/employer`, `/jobs/guest-post`, `/cms/sales-enqu
 5. Cache master data. Never hard-code dropdown values (the admin can change them).
 6. Never cache resume or chat file URLs. They expire.
 7. Socket: websocket transport, reconnect after token refresh, `clientId` on sends.
+8. Use `/assistant/message` for the help screen and offer `/chat/support` when `handoff` is true.

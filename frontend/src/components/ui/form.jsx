@@ -157,7 +157,7 @@ function useOutsideClick(onOutside) {
  * Type-ahead over master data (or any async source). Single value (string) or multiple (string[]).
  * `allowCreate` keeps free text; for user-addable lookup types the option is also stored server-side.
  */
-export const SuggestField = ({ label, required, error, hint, className = '', lookup, parent, multiple = false, max, value, onChange, placeholder, allowCreate = false }) => {
+export const SuggestField = ({ label, required, error, hint, className = '', lookup, parent, parents, limit = 20, multiple = false, max, value, onChange, placeholder, allowCreate = false, disabled = false }) => {
   const id = useId();
   const [text, setText] = useState('');
   const [open, setOpen] = useState(false);
@@ -168,12 +168,12 @@ export const SuggestField = ({ label, required, error, hint, className = '', loo
   const selected = multiple ? value || [] : [];
 
   const { data, isFetching } = useQuery({
-    queryKey: ['lookup-suggest', lookup, parent, debounced],
-    queryFn: () => lookupApi.search(lookup, { q: debounced || undefined, parent, limit: 20 }),
-    enabled: open && Boolean(lookup),
+    queryKey: ['lookup-suggest', lookup, parent, parents, debounced, limit],
+    queryFn: () => lookupApi.search(lookup, { q: debounced || undefined, parent, parents: parents || undefined, limit }),
+    enabled: open && Boolean(lookup) && !disabled,
     staleTime: 5 * 60 * 1000,
   });
-  const options = (data || []).map((o) => o.name).filter((n) => !selected.includes(n));
+  const options = [...new Set((data || []).map((o) => o.name))].filter((n) => !selected.includes(n));
   const showCreate = allowCreate && text.trim() && !options.some((o) => o.toLowerCase() === text.trim().toLowerCase());
 
   const pick = (name) => {
@@ -196,7 +196,7 @@ export const SuggestField = ({ label, required, error, hint, className = '', loo
   return (
     <Field label={label} required={required} error={error} hint={hint} htmlFor={id} className={className}>
       <div className="relative" ref={ref}>
-        <div className={clsx('flex min-h-11 flex-wrap items-center gap-1.5 rounded-[var(--radius-input)] border border-[#D5DBE4] bg-white px-2.5 py-1.5 transition-shadow focus-within:border-brand-blue focus-within:shadow-[0_0_0_3px_rgba(10,108,181,0.14)]', error && 'border-brand-red')}>
+        <div className={clsx('flex min-h-11 flex-wrap items-center gap-1.5 rounded-[var(--radius-input)] border border-[#D5DBE4] bg-white px-2.5 py-1.5 transition-shadow focus-within:border-[#98A2B3]', error && 'border-brand-red')}>
           {selected.map((s) => (
             <span key={s} className="inline-flex items-center gap-1 rounded-md bg-brand-blue-tint px-2 py-1 text-xs font-medium text-brand-blue">
               {s}
@@ -214,8 +214,9 @@ export const SuggestField = ({ label, required, error, hint, className = '', loo
               setOpen(true);
               if (!multiple) onChange(allowCreate ? e.target.value : '');
             }}
-            onFocus={() => setOpen(true)}
+            onClick={() => setOpen(true)}
             onKeyDown={(e) => {
+              if (e.key === 'ArrowDown') setOpen(true);
               if (e.key === 'Enter') {
                 e.preventDefault();
                 if (options[0] && !showCreate) pick(options[0]);
@@ -224,8 +225,9 @@ export const SuggestField = ({ label, required, error, hint, className = '', loo
                 onChange(selected.slice(0, -1));
               }
             }}
+            disabled={disabled}
             placeholder={selected.length ? '' : placeholder || 'Type to search'}
-            className="h-7 min-w-[100px] flex-1 bg-transparent text-sm text-brand-dark outline-none placeholder:text-brand-gray-muted"
+            className="h-7 min-w-[100px] flex-1 bg-transparent text-sm text-brand-dark outline-none placeholder:text-brand-gray-muted disabled:cursor-not-allowed"
           />
           {isFetching && <Spinner size={14} />}
         </div>
@@ -247,6 +249,79 @@ export const SuggestField = ({ label, required, error, hint, className = '', loo
             )}
           </ul>
         )}
+      </div>
+    </Field>
+  );
+};
+
+/**
+ * Free-text entries in box format instead of commas (Excel: keywords, e-mails). Enter, comma or Tab adds a box.
+ * With `starred` / `onStarredChange`, each box gets a star that marks it mandatory.
+ */
+export const TagInput = ({ label, required, error, hint, className = '', value = [], onChange, max = 20, placeholder = 'Type and press Enter', starred, onStarredChange, validate, maxLength = 100 }) => {
+  const id = useId();
+  const [text, setText] = useState('');
+  const stars = starred || [];
+  const add = (raw) => {
+    const parts = String(raw)
+      .split(',')
+      .map((t) => t.trim().slice(0, maxLength))
+      .filter(Boolean);
+    if (!parts.length) return;
+    let next = [...value];
+    for (const t of parts) {
+      if (next.some((x) => x.toLowerCase() === t.toLowerCase())) continue;
+      if (validate && !validate(t)) {
+        toast.error(`"${t}" is not valid`);
+        continue;
+      }
+      if (next.length >= max) {
+        toast.error(`You can add up to ${max}`);
+        break;
+      }
+      next = [...next, t];
+    }
+    onChange(next);
+    setText('');
+  };
+  const remove = (t) => {
+    onChange(value.filter((x) => x !== t));
+    if (onStarredChange && stars.includes(t)) onStarredChange(stars.filter((x) => x !== t));
+  };
+  return (
+    <Field label={label} required={required} error={error} hint={hint} htmlFor={id} className={className}>
+      <div className={clsx('flex min-h-11 flex-wrap items-center gap-1.5 rounded-[var(--radius-input)] border border-[#D5DBE4] bg-white px-2.5 py-1.5 focus-within:border-[#98A2B3]', error && 'border-brand-red')}>
+        {value.map((t) => {
+          const on = stars.includes(t);
+          return (
+            <span key={t} className={clsx('inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium', on ? 'bg-[#FFF4E0] text-[#B26A00]' : 'bg-brand-blue-tint text-brand-blue')}>
+              {onStarredChange && (
+                <button type="button" aria-pressed={on} aria-label={on ? `Make ${t} optional` : `Make ${t} mandatory`} title={on ? 'Mandatory' : 'Mark as mandatory'} onClick={() => onStarredChange(on ? stars.filter((x) => x !== t) : [...stars, t])}>
+                  <Icon name="star" size={14} fill={on} />
+                </button>
+              )}
+              {t}
+              <button type="button" aria-label={`Remove ${t}`} onClick={() => remove(t)}>
+                <Icon name="close" size={13} />
+              </button>
+            </span>
+          );
+        })}
+        <input
+          id={id}
+          autoComplete="off"
+          value={text}
+          onChange={(e) => (e.target.value.includes(',') ? add(e.target.value) : setText(e.target.value))}
+          onKeyDown={(e) => {
+            if ((e.key === 'Enter' || e.key === 'Tab') && text.trim()) {
+              e.preventDefault();
+              add(text);
+            } else if (e.key === 'Backspace' && !text && value.length) remove(value[value.length - 1]);
+          }}
+          onBlur={() => text.trim() && add(text)}
+          placeholder={value.length ? '' : placeholder}
+          className="h-7 min-w-[120px] flex-1 bg-transparent text-sm text-brand-dark outline-none placeholder:text-brand-gray-muted"
+        />
       </div>
     </Field>
   );
@@ -288,7 +363,7 @@ export const LocationField = ({ label, required, error, hint, className = '', mu
   return (
     <Field label={label} required={required} error={error} hint={hint} htmlFor={id} className={className}>
       <div className="relative" ref={ref}>
-        <div className={clsx('flex min-h-11 flex-wrap items-center gap-1.5 rounded-[var(--radius-input)] border border-[#D5DBE4] bg-white px-2.5 py-1.5 transition-shadow focus-within:border-brand-blue focus-within:shadow-[0_0_0_3px_rgba(10,108,181,0.14)]', error && 'border-brand-red')}>
+        <div className={clsx('flex min-h-11 flex-wrap items-center gap-1.5 rounded-[var(--radius-input)] border border-[#D5DBE4] bg-white px-2.5 py-1.5 transition-shadow focus-within:border-[#98A2B3]', error && 'border-brand-red')}>
           <Icon name="location_on" size={18} className="text-brand-gray-muted" />
           {selected.map((p, i) => (
             <span key={`${p.city}-${i}`} className="inline-flex items-center gap-1 rounded-md bg-brand-blue-tint px-2 py-1 text-xs font-medium text-brand-blue">
@@ -307,8 +382,9 @@ export const LocationField = ({ label, required, error, hint, className = '', mu
               setOpen(true);
               if (!multiple && value) onChange(null);
             }}
-            onFocus={() => setOpen(true)}
+            onClick={() => setOpen(true)}
             onKeyDown={(e) => {
+              if (e.key === 'ArrowDown') setOpen(true);
               if (e.key === 'Enter') {
                 e.preventDefault();
                 custom();

@@ -93,7 +93,9 @@ export const jobApi = {
   apply: (id, { resume, ...body }) => (resume ? upload(`/jobs/${id}/apply`, { ...body, resume }) : post(`/jobs/${id}/apply`, body)),
   guestOtp: (id, mobile) => post(`/jobs/${id}/guest-apply/otp`, { mobile }),
   guestApply: (id, fields) => upload(`/jobs/${id}/guest-apply`, fields),
+  guestPostOtp: (mobile) => post('/jobs/guest-post/otp', { mobile }),
   guestPost: (body) => post('/jobs/guest-post', body),
+  requestCallback: (id) => post(`/jobs/${id}/callback`),
 };
 
 export const applicationApi = {
@@ -249,6 +251,7 @@ export const employerJobApi = {
   trash: (id) => post(`/employer/jobs/${id}/trash`),
   duplicate: (id) => post(`/employer/jobs/${id}/duplicate`),
   collaborators: (id, memberIds) => put(`/employer/jobs/${id}/collaborators`, { memberIds }),
+  callbacks: (id, params) => list(`/employer/jobs/${id}/callbacks`, params),
   share: (id) => get(`/employer/jobs/${id}/share`),
   bulkImport: (file, publish) => upload('/employer/jobs/bulk-import', { file }, { publish }),
 };

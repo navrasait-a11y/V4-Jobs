@@ -39,11 +39,20 @@ export function formatSalary(job) {
   return `${s.min ? compactRupee(s.min) : ''}${s.min && s.max ? ' - ' : ''}${s.max ? compactRupee(s.max) : ''} ${unit}`;
 }
 
+/** Years may be fractional (1 month = 1/12): under a year reads as months. */
+const expPart = (years) => {
+  const months = Math.round(Number(years || 0) * 12);
+  if (months && months < 12) return { n: months, unit: 'Mo' };
+  return { n: Math.round((months / 12) * 10) / 10, unit: 'Yrs' };
+};
+
 export function formatExperience(job) {
   const e = job?.experience;
   if (!e || (!e.min && !e.max)) return job?.kind === 'internship' ? 'Internship' : 'Fresher';
-  if (e.max === undefined || e.max === null) return `${e.min}+ Yrs`;
-  return `${e.min} - ${e.max} Yrs`;
+  const min = expPart(e.min);
+  if (e.max === undefined || e.max === null) return `${min.n}+ ${min.unit}`;
+  const max = expPart(e.max);
+  return min.unit === max.unit ? `${min.n} - ${max.n} ${max.unit}` : `${min.n} ${min.unit} - ${max.n} ${max.unit}`;
 }
 
 export const formatLocations = (job, max = 2) => {

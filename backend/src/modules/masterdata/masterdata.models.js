@@ -4,8 +4,8 @@ const { Schema } = mongoose;
 
 /**
  * Every dropdown / suggestion list in the Excel forms that says "Edit / Add New Option Required
- * in Admin Panel" is a Lookup type. Hierarchies (Industry > Department > Role,
- * Education level > Degree > Specialisation) use `parent`.
+ * in Admin Panel" is a Lookup type. Hierarchies use `parent`: Industry > Sub Industry,
+ * Department > Function, Education level > Degree > Specialisation. Job roles are one flat list.
  */
 export const LOOKUP_TYPES = Object.freeze({
   experience_level: 'Experience Level',
@@ -22,7 +22,14 @@ export const LOOKUP_TYPES = Object.freeze({
   service_type: 'Service Type',
   english_fluency: 'English Fluency Level',
   language: 'Language',
-  asset: 'Asset Requirements / Availability',
+  asset: 'Assets Availability',
+  candidate_document: 'Documents Availability',
+  relocate_option: 'Ready To Relocate',
+  diversity_hiring: 'Diversity Hiring',
+  interview_mode: 'Mode of Interview',
+  internship_type: 'Internship Type',
+  top_company: 'Top Companies (job and company filters)',
+  candidate_stage: 'Candidate Status / Interview Stage',
   job_title: 'Job Title / Designation',
   key_skill: 'Key Skill',
   it_skill: 'IT Skill',
@@ -35,7 +42,9 @@ export const LOOKUP_TYPES = Object.freeze({
   perk: 'Additional Perks',
   notice_period: 'Notice Period / Availability to Join',
   industry: 'Industry / Sector',
-  department: 'Department / Function',
+  sub_industry: 'Sub Industry',
+  department: 'Department',
+  department_function: 'Department Function',
   job_role: 'Job Role',
   education_level: 'Level of Education',
   degree: 'Degree / Course',
@@ -58,6 +67,9 @@ export const LOOKUP_TYPES = Object.freeze({
   blog_category: 'Blog Category',
   job_category: 'Job Category (IT / Non IT ...)',
 });
+
+/** Child type -> parent type, for the "pick a parent, then its sub options" fields. */
+export const PARENT_TYPE = Object.freeze({ sub_industry: 'industry', department_function: 'department', degree: 'education_level', specialisation: 'degree' });
 
 /** Types where front-end users may add a new option (Excel: "Enable Add New Options For Admin & User Both"). */
 export const USER_ADDABLE_TYPES = ['job_title', 'key_skill', 'it_skill', 'institution', 'company_name', 'certification'];

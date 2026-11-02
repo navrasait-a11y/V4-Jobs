@@ -1,4 +1,6 @@
 import mongoose from 'mongoose';
+import config from '../../config/env.js';
+import { escapeHtml } from '../../shared/services/emailTemplates.js';
 import { ZipArchive } from 'archiver';
 import ApiError from '../../shared/errors/ApiError.js';
 import { JOB_STATUS, ROLES } from '../../shared/constants/index.js';
@@ -12,7 +14,7 @@ import User from '../users/user.model.js';
 import Candidate from '../candidates/candidate.model.js';
 import Organization from '../employers/organization.model.js';
 import { Application, Interview } from './application.model.js';
-import { JobInvite } from '../engagement/engagement.models.js';
+import { JobInvite, ProfileAccess } from '../engagement/engagement.models.js';
 import { isBlockedBetween } from '../moderation/blocklist.service.js';
 import { verifyOtp, sendOtp } from '../auth/otp.service.js';
 import { issueTokens } from '../auth/token.service.js';
@@ -22,7 +24,7 @@ import { notify, sendEmail } from '../notifications/notification.service.js';
 import { score } from '../matching/matching.service.js';
 import { trackUsage } from '../billing/usage.service.js';
 import { logActivity } from '../activity/activity.service.js';
-import { refreshDerived } from '../candidates/candidate.service.js';
+import { refreshDerived, withRelocationFlags } from '../candidates/candidate.service.js';
 
 const STAGE_LABEL = {
   applied: 'Applied',
@@ -43,12 +45,57 @@ async function assertJobOpen(jobId) {
   return job;
 }
 
+/** Screening answers by question type ("Other Forms" Excel: single / multiple choice, short answer, text only, numbers only). */
 function validateAnswers(job, answers = []) {
   const map = new Map(answers.map((a) => [a.question, a.answer]));
-  for (const q of job.questions || []) {
-    if (q.required && !String(map.get(q.question) ?? '').trim()) throw ApiError.badRequest(`Please answer: ${q.question}`, undefined, 'ANSWER_REQUIRED');
+  return (job.questions || []).map((q) => {
+    const raw = map.get(q.question);
+    const list = (Array.isArray(raw) ? raw : raw ? [raw] : []).map((x) => String(x).trim()).filter(Boolean);
+    const answer = list.join(', ');
+    if (q.required && !answer) throw ApiError.badRequest(`Please answer: ${q.question}`, undefined, 'ANSWER_REQUIRED');
+    if (answer) {
+      const invalid = (msg) => ApiError.badRequest(`${q.question}: ${msg}`, undefined, 'ANSWER_INVALID');
+      if (q.type === 'number' && !/^-?\d+(\.\d+)?$/.test(answer)) throw invalid('please enter numbers only');
+      if (q.type === 'text' && /\d/.test(answer)) throw invalid('please answer in text only');
+      if (['single_choice', 'multiple_choice', 'choice', 'yes_no'].includes(q.type)) {
+        const options = q.type === 'yes_no' ? ['Yes', 'No'] : q.options || [];
+        if (q.type !== 'multiple_choice' && list.length > 1) throw invalid('pick one option');
+        if (options.length && list.some((a) => !options.includes(a))) throw invalid('pick from the given options');
+      }
+    }
+    return { question: q.question, answer: answer.slice(0, 2000) };
+  });
+}
+
+/** Poster + extra "receive responses" e-mails of a job (Collaborate With Other Users). */
+async function responseRecipients(job) {
+  const poster = await User.findById(job.postedBy).select('email').lean();
+  return [...new Set([poster?.email, ...(job.responseAlerts?.emails || [])].filter(Boolean).map((e) => e.toLowerCase()))];
+}
+
+/** "Receive Every New Response": one e-mail per application. */
+async function sendResponseAlert(job, candidate, org) {
+  const to = await responseRecipients(job);
+  const url = `${config.urls.web}/employer/applications?job=${job._id}`;
+  const html = `<p><b>${escapeHtml(candidate.fullName || 'A candidate')}</b> applied for <b>${escapeHtml(job.title)}</b>${org?.name ? ` at ${escapeHtml(org.name)}` : ''}.</p>`;
+  await Promise.all(to.map((email) => sendEmail({ to: email, template: 'generic', vars: { title: `New response: ${job.title}`, html, url, label: 'View response' } })));
+}
+
+/** "Receive A Daily Response Summary": yesterday's response count for each active job that asked for it. */
+export async function sendDailyResponseSummaries() {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const jobs = await Job.find({ status: JOB_STATUS.ACTIVE, 'responseAlerts.daily': true }).select('title postedBy responseAlerts').lean();
+  let sent = 0;
+  for (const job of jobs) {
+    const count = await Application.countDocuments({ job: job._id, createdAt: { $gte: since } });
+    if (!count) continue;
+    const to = await responseRecipients(job);
+    const url = `${config.urls.web}/employer/applications?job=${job._id}`;
+    const html = `<p>Your job <b>${escapeHtml(job.title)}</b> received <b>${count}</b> new response${count > 1 ? 's' : ''} in the last 24 hours.</p>`;
+    await Promise.all(to.map((email) => sendEmail({ to: email, template: 'generic', vars: { title: `Daily responses: ${job.title}`, html, url, label: 'View responses' } })));
+    sent += to.length;
   }
-  return (job.questions || []).map((q) => ({ question: q.question, answer: String(map.get(q.question) ?? '').slice(0, 2000) }));
+  return { jobs: jobs.length, sent };
 }
 
 /** Core apply used by logged-in apply, guest apply, invites, events and admin assignment. */
@@ -105,6 +152,7 @@ export async function createApplication({ job, user, profile, source = 'direct',
       channels: ['in_app', 'push'],
     });
   }
+  if (job.responseAlerts?.everyResponse) sendResponseAlert(job, user, org).catch(() => {});
   if (user.email)
     sendEmail({
       to: user.email,
@@ -180,10 +228,13 @@ export async function guestApply(req, jobId, body, file) {
     hasFourWheeler: body.hasFourWheeler,
     drivingLicense: body.drivingLicense,
     assets: body.assets,
+    documents: body.documents,
     keySkills: body.keySkills,
     roles: body.roles,
     departments: body.departments,
+    functions: body.functions,
     industries: body.industries,
+    subIndustries: body.subIndustries,
     noticePeriod: body.noticePeriod,
     currentLocation: body.currentLocation,
     languages: body.languages,
@@ -204,7 +255,17 @@ export async function guestApply(req, jobId, body, file) {
           },
         ]
       : undefined,
-    preferences: { locations: body.preferredLocations },
+    preferences: withRelocationFlags({
+      locations: body.preferredLocations,
+      relocation: body.relocation,
+      distanceKm: body.distanceKm,
+      skills: body.keySkills,
+      industries: body.industries,
+      subIndustries: body.subIndustries,
+      departments: body.departments,
+      functions: body.functions,
+      roles: body.roles,
+    }),
   };
 
   if (!user) {
@@ -609,9 +670,21 @@ export async function exportResponses(user, q) {
   if (!isAdmin(user) && !hasEmployerPermission(user, 'response.export_all', 'response.export_own'))
     throw ApiError.forbidden('You are not allowed to export responses');
   const filter = buildResponseFilter(user, q);
-  if (!isAdmin(user) && !hasEmployerPermission(user, 'response.export_all')) filter.jobPostedBy = user._id;
+  const ownOnly = !isAdmin(user) && !hasEmployerPermission(user, 'response.export_all');
+  if (ownOnly) filter.jobPostedBy = user._id;
   const rows = await Application.find(filter).sort({ createdAt: -1 }).limit(50000).populate('job', 'title uid').lean();
-  if (user.role === ROLES.EMPLOYER) await trackUsage(user.employer.organization, user._id, 'excel_download', 1);
+  if (user.role === ROLES.EMPLOYER) {
+    const org = user.employer.organization;
+    await Promise.all([trackUsage(org, user._id, 'excel_download', 1), rows.length && trackUsage(org, user._id, ownOnly ? 'response_download_own' : 'response_download_all', rows.length)]);
+    // Feeds the resume-search filter "Hide candidates already downloaded in Excel".
+    const candidates = [...new Set(rows.map((r) => String(r.candidate)))];
+    if (candidates.length) {
+      ProfileAccess.insertMany(
+        candidates.map((candidate) => ({ organization: org, member: user._id, candidate, type: 'excel_download', source: 'responses_export' })),
+        { ordered: false },
+      ).catch(() => {});
+    }
+  }
   return rows;
 }
 

@@ -2,7 +2,7 @@ import config from '../../config/env.js';
 import ApiError from '../../shared/errors/ApiError.js';
 import { JOB_STATUS, JOB_KIND, ID_PREFIX, USER_STATUS, ROLES } from '../../shared/constants/index.js';
 import { generateUid } from '../../shared/models/counter.model.js';
-import { uniqueSlug, escapeRegex, omit } from '../../shared/utils/helpers.js';
+import { uniqueSlug, escapeRegex, omit, normalizeMobile, toArray } from '../../shared/utils/helpers.js';
 import { parseWorkbook } from '../../shared/utils/excel.js';
 import { hasEmployerPermission, isAdmin } from '../../shared/middleware/auth.js';
 import Job from './job.model.js';
@@ -10,7 +10,9 @@ import Organization from '../employers/organization.model.js';
 import User from '../users/user.model.js';
 import Candidate from '../candidates/candidate.model.js';
 import { Application } from '../applications/application.model.js';
-import { SavedJob, RecentSearch } from '../engagement/engagement.models.js';
+import { SavedJob, RecentSearch, CallbackRequest } from '../engagement/engagement.models.js';
+import { notify } from '../notifications/notification.service.js';
+import { sendOtp, verifyOtp } from '../auth/otp.service.js';
 import { getSetting } from '../settings/settings.service.js';
 import { consume, refundCredits } from '../billing/usage.service.js';
 import { notifyFollowersOfJob } from '../employers/employer.service.js';
@@ -20,7 +22,7 @@ import { sendActivation } from '../employers/employer.service.js';
 import { getWeights, scoreMatch } from '../matching/matching.service.js';
 import { buildJobSearch, jobSort, LIST_FIELDS } from './job.query.js';
 import { logActivity } from '../activity/activity.service.js';
-import { touchUsage } from '../masterdata/masterdata.service.js';
+import { touchUsage, citiesWithin } from '../masterdata/masterdata.service.js';
 
 const IMMUTABLE = [
   'uid',
@@ -42,12 +44,25 @@ function orgSnapshot(org) {
   return { name: org.name, logo: org.logo?.url, isVerified: org.isVerified, slug: org.slug, username: org.username, employerType: org.employerType };
 }
 
-/** Hides consultancy client names and private contact details from candidates / public. */
+/**
+ * Hides consultancy client names and private contact details from candidates / public.
+ * Phone numbers and e-mails reach a candidate only through `contactActionFor` (Excel: "Call Now /
+ * Request Call Back - only visible once the candidate fills the apply form or creates an account").
+ */
 export function publicJob(job) {
   if (!job) return job;
   const out = { ...job };
   if (out.consultancyClient?.hideName) out.consultancyClient = { hideName: true, industry: out.consultancyClient.industry };
-  if (out.contact && !out.contact.showToCandidates) delete out.contact;
+  if (out.contact) {
+    const { timeFrom, timeTo, dayFrom, dayTo } = out.contact;
+    out.contact = { timeFrom, timeTo, dayFrom, dayTo };
+  }
+  if (out.walkIn) {
+    const { contactName: _n, contactMobile: _m, contactEmail: _e, ...walkIn } = out.walkIn;
+    out.walkIn = walkIn;
+  }
+  delete out.responseAlerts;
+  delete out.callbackRequests;
   delete out.uid;
   delete out.collaborators;
   delete out.postedByAdmin;
@@ -251,8 +266,20 @@ export async function listEmployerJobs(user, q, { page, limit, skip, sort }) {
 
 /* ----------------------------------------------------------- public side */
 
-export async function searchJobs(query, viewer, { page, limit, skip }) {
+/** Filters that need a lookup first: "within N km" (nearby cities) and company size (organizations). */
+async function resolveSearch(query) {
   const q = { ...query };
+  const cities = toArray(q.location || q.locations);
+  if (q.distanceKm && cities.length) q.nearCities = await citiesWithin(cities, q.distanceKm);
+  const sizes = toArray(q.companySize);
+  if (sizes.length && !q.organization) {
+    q.organizationIn = await Organization.find({ employeeCount: { $in: sizes } }).distinct('_id');
+  }
+  return q;
+}
+
+export async function searchJobs(query, viewer, { page, limit, skip }) {
+  const q = await resolveSearch(query);
   if (viewer?.role === ROLES.CANDIDATE) q.excludeOrganizations = await hiddenOrganizationIdsFor(viewer._id);
   const filter = buildJobSearch(q);
   const hasText = Boolean(filter.$text);
@@ -276,12 +303,12 @@ export async function searchJobs(query, viewer, { page, limit, skip }) {
     const a = new Set(applied.map((x) => String(x.job)));
     const s = new Set(saved.map((x) => String(x.job)));
     enriched = enriched.map((j) => ({ ...j, hasApplied: a.has(String(j._id)), isSaved: s.has(String(j._id)) }));
-    if (query.q || query.location) {
+    if (query.q || query.keywords || query.location) {
       RecentSearch.create({
         owner: viewer._id,
         scope: 'job',
         filters: query,
-        summary: [query.q, query.location].filter(Boolean).join(' in '),
+        summary: [[query.q, ...toArray(query.keywords)].filter(Boolean).join(', '), toArray(query.location).join(', ')].filter(Boolean).join(' in '),
         resultCount: total,
       }).catch(() => {});
     }
@@ -291,7 +318,7 @@ export async function searchJobs(query, viewer, { page, limit, skip }) {
 
 /** Facet counts for the search side-filters (work mode, experience buckets, departments ...). */
 export async function searchFacets(query) {
-  const filter = buildJobSearch(query);
+  const filter = buildJobSearch(await resolveSearch(query));
   const [res] = await Job.aggregate([
     { $match: filter },
     {
@@ -335,9 +362,70 @@ export async function getPublicJob(idOrSlug, viewer) {
     out.hasApplied = Boolean(application);
     out.application = application;
     out.isSaved = Boolean(saved);
+    out.contactAction = await contactActionFor(job, { requested: Boolean(await CallbackRequest.exists({ job: job._id, candidate: viewer._id })) });
     if (profile) out.match = scoreMatch(profile, job, await getWeights());
   }
   return out;
+}
+
+export const CALL_MODES = ['Walk-in', 'Candidates Can Call Me Directly', 'Candidates Can Call Other Recruiter'];
+export const CALLBACK_MODES = ['I will Contact Candidates', 'Other Recruiter will Contact Candidates', 'Will Confirm Later'];
+
+/** What a signed-in candidate sees under "Mode of Interview": a number to call, or a call-back request. */
+export async function contactActionFor(job, { requested = false } = {}) {
+  const mode = job.interviewMode;
+  const hours = { timeFrom: job.contact?.timeFrom, timeTo: job.contact?.timeTo, dayFrom: job.contact?.dayFrom, dayTo: job.contact?.dayTo };
+  if (CALL_MODES.includes(mode)) {
+    let name = job.contact?.name;
+    let mobile = job.contact?.mobile;
+    let email = job.contact?.email;
+    if (mode === 'Walk-in') {
+      name = job.walkIn?.contactName || name;
+      mobile = job.walkIn?.contactMobile || mobile;
+      email = job.walkIn?.contactEmail || email;
+    }
+    if (!mobile && mode === 'Candidates Can Call Me Directly') {
+      const poster = await User.findById(job.postedBy).select('fullName mobile').lean();
+      name = name || poster?.fullName;
+      mobile = poster?.mobile;
+    }
+    if (mobile) return { type: 'call', mode, name, mobile, email, ...hours };
+  }
+  if (CALLBACK_MODES.includes(mode) || CALL_MODES.includes(mode)) return { type: 'callback', mode, requested, ...hours };
+  return null;
+}
+
+/** "Request Call Back": one request per candidate per job, sent to the poster and collaborators. */
+export async function requestCallback(user, jobId) {
+  const job = await Job.findOne({ _id: jobId, status: JOB_STATUS.ACTIVE }).lean();
+  if (!job) throw ApiError.notFound('Job not found');
+  const res = await CallbackRequest.updateOne(
+    { job: job._id, candidate: user._id },
+    { $setOnInsert: { job: job._id, organization: job.organization, candidate: user._id } },
+    { upsert: true },
+  );
+  if (!res.upsertedCount) return { requested: true, duplicate: true };
+  await Job.updateOne({ _id: job._id }, { $inc: { callbackRequests: 1 } });
+  for (const to of [job.postedBy, ...(job.collaborators || [])]) {
+    notify(to, {
+      type: 'callback_request',
+      title: `${user.fullName || 'A candidate'} asked for a call back`,
+      body: `${job.title}${user.mobile ? ` - ${user.mobile}` : ''}`,
+      data: { screen: 'job_callbacks', jobId: String(job._id) },
+      channels: ['in_app', 'push', 'email'],
+    });
+  }
+  return { requested: true };
+}
+
+export async function listCallbacks(user, jobId, { page, limit, skip }) {
+  const job = await getManageableJob(user, jobId);
+  const filter = { job: job._id };
+  const [items, total] = await Promise.all([
+    CallbackRequest.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).populate('candidate', 'fullName mobile email avatar').lean(),
+    CallbackRequest.countDocuments(filter),
+  ]);
+  return { items, total, page, limit };
 }
 
 export async function similarJobs(jobId, limit = 10) {
@@ -422,9 +510,15 @@ export async function listSavedJobs(userId, { page, limit, skip }) {
  * "Post Job Vacancy or Internship Without Login and Create Employer Account Automatically".
  * Creates employer + org (pending) + the job (pending review) and e-mails a set-password link.
  */
-export async function guestPostJob(req, { employer, job }) {
+/** "Post a Job" without login: OTP on the employer's mobile first ("Enter OTP & Verify"). */
+export async function guestPostOtp({ mobile }) {
+  return sendOtp({ target: normalizeMobile(mobile), channel: 'sms', purpose: 'guest_post' });
+}
+
+export async function guestPostJob(req, { employer: { otp, ...employer }, job }) {
+  await verifyOtp({ target: normalizeMobile(employer.mobile), purpose: 'guest_post', code: otp });
   const { user, organization } = await createEmployerAccount(
-    { ...employer, password: undefined, acceptTerms: true, consentCommunication: employer.consentCommunication },
+    { ...employer, password: undefined, acceptTerms: true, mobileVerified: true, consentCommunication: employer.consentCommunication },
     { source: 'job_post', ip: req.ip, status: USER_STATUS.PENDING },
   );
   user.password = `${Math.random().toString(36).slice(2)}Aa1!${Date.now()}`;

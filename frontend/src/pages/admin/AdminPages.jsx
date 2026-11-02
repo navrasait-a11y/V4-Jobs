@@ -1,16 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { MODULES } from './modules';
 import ResourcePage from '../../components/admin/ResourcePage';
 import { MediaField, PlanAndWallet } from '../../components/admin/AdminActions';
 import AccountSecurity from '../../components/shared/AccountSecurity';
 import Button from '../../components/ui/Button';
-import { Avatar, DataTable, DetailRow, PageHeader, Section, SimpleSelect, StatTile, StatusBadge, Tabs } from '../../components/ui/data';
-import { EmptyState, ErrorState, Icon, Modal, PageLoader } from '../../components/ui/feedback';
+import { Avatar, DataTable, DetailRow, PageHeader, Pagination, SearchInput, Section, SimpleSelect, StatTile, StatusBadge, Tabs } from '../../components/ui/data';
+import { ConfirmDialog, EmptyState, ErrorState, Icon, Modal, PageLoader } from '../../components/ui/feedback';
 import { CheckboxField, Field, ChoiceChips, SelectField, TextAreaField, TextField } from '../../components/ui/form';
 import useAuth from '../../hooks/useAuth';
+import useDebounce from '../../hooks/useDebounce';
 import { useAction, useDocumentTitle } from '../../hooks/useData';
 import { useSocketEvent } from '../../hooks/useRealtime';
 import { adminApi, lookupApi } from '../../services';
@@ -306,54 +308,135 @@ export const KycQueue = () => {
   );
 };
 
+/** Child list -> its parent list, as in the client's Excel (Industry > Sub Industry, Level > Course > Specialisation). */
+const PARENT_OF = { sub_industry: 'industry', department_function: 'department', degree: 'education_level', specialisation: 'degree' };
+
+const RenameOption = ({ option, onClose }) => {
+  const [name, setName] = useState(option.name);
+  const save = useAction(() => adminApi.patch(`/master-data/item/${option._id}`, { name: name.trim() }), { success: 'Option renamed', invalidate: ['admin'], onSuccess: onClose });
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Rename option"
+      size="sm"
+      footer={
+        <Button size="sm" variant="primaryBlue" disabled={!name.trim()} loading={save.isPending} onClick={() => save.mutate()}>
+          Save
+        </Button>
+      }
+    >
+      <TextField label="Name" value={name} onChange={(e) => setName(e.target.value)} maxLength={200} />
+    </Modal>
+  );
+};
+
 export const Taxonomy = () => {
   useDocumentTitle('Master data');
   const { data: types } = useQuery({ queryKey: ['lookup-types'], queryFn: lookupApi.types });
-  const [type, setType] = useState('key_skill');
+  const [type, setTypeState] = useState('key_skill');
+  const [q, setQ] = useState('');
+  const term = useDebounce(q, 300);
+  const [page, setPage] = useState(1);
+  const [parentFilter, setParentFilter] = useState('');
   const [name, setName] = useState('');
-  const query = useQuery({ queryKey: ['admin', 'master', type], queryFn: () => adminApi.list(`/master-data/${type}`, { limit: 200 }) });
-  const add = useAction(() => adminApi.post(`/master-data/${type}`, { name }), { success: 'Option added', invalidate: ['admin'], onSuccess: () => setName('') });
+  const [parent, setParent] = useState('');
+  const [renaming, setRenaming] = useState(null);
+  const [removing, setRemoving] = useState(null);
+  const parentType = PARENT_OF[type];
+  const setType = (t) => {
+    setTypeState(t);
+    setPage(1);
+    setQ('');
+    setParentFilter('');
+    setParent('');
+  };
+
+  const query = useQuery({
+    queryKey: ['admin', 'master', type, term, page, parentFilter],
+    queryFn: () => adminApi.list(`/master-data/${type}`, { q: term || undefined, parent: parentFilter || undefined, page, limit: 50 }),
+    placeholderData: keepPreviousData,
+  });
+  // Parent choices. Degrees are shown with their education level because names like "Other" repeat.
+  const parents = useQuery({ queryKey: ['admin', 'master-parents', parentType], queryFn: () => lookupApi.search(parentType, { limit: 500 }), enabled: Boolean(parentType) });
+  const levels = useQuery({ queryKey: ['admin', 'master-parents', 'education_level'], queryFn: () => lookupApi.search('education_level', { limit: 50 }), enabled: type === 'specialisation' });
+  const levelName = Object.fromEntries((levels.data || []).map((l) => [l._id, l.name]));
+  const parentOptions = (parents.data || []).map((o) => ({ value: o._id, label: type === 'specialisation' && levelName[o.parent] ? `${levelName[o.parent]} > ${o.name}` : o.name }));
+
+  const add = useAction(() => adminApi.post(`/master-data/${type}`, { name: name.trim(), ...(parentType ? { parent } : {}) }), { success: 'Option added', invalidate: ['admin'], onSuccess: () => setName('') });
   const toggle = useAction(({ id, isActive }) => adminApi.patch(`/master-data/item/${id}`, { isActive }), { invalidate: ['admin'] });
-  const importList = useAction((file) => adminApi.upload(`/master-data/${type}/import`, { file }), { success: 'Import finished', invalidate: ['admin'] });
-  const remove = useAction((id) => adminApi.del(`/master-data/item/${id}`), { success: 'Option deleted', invalidate: ['admin'] });
+  const importList = useAction((file) => adminApi.upload(`/master-data/${type}/import`, { file }), {
+    success: (r) => `Import finished: ${r.inserted} added, ${r.updated} updated${r.errors?.length ? `, ${r.errors.length} rows skipped` : ''}`,
+    invalidate: ['admin'],
+  });
+  const remove = useAction((id) => adminApi.del(`/master-data/item/${id}`), { success: 'Option deleted', invalidate: ['admin'], onSuccess: () => setRemoving(null) });
+  const parentLabel = (o) => (o.parent ? (type === 'specialisation' && o.parent.parent?.name ? `${o.parent.parent.name} > ${o.parent.name}` : o.parent.name) : '—');
+
   return (
     <div>
-      <PageHeader title="Master Data" subtitle="All dropdowns on the site" />
-      <div className="mb-4 flex flex-wrap items-end gap-2">
-        <SimpleSelect ariaLabel="List" value={type} onChange={setType} options={(types || []).map((t) => ({ value: t.key, label: t.label }))} className="max-w-xs" />
+      <PageHeader title="Master Data" subtitle="Every dropdown and suggestion list on the site" />
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <SimpleSelect ariaLabel="List" value={type} onChange={setType} options={(types || []).map((t) => ({ value: t.key, label: t.label }))} className="min-w-[220px] max-w-xs" />
+        {parentType && <SimpleSelect ariaLabel="Filter by parent" value={parentFilter} onChange={(v) => { setParentFilter(v); setPage(1); }} options={[{ value: '', label: 'All parents' }, ...parentOptions]} className="min-w-[220px] max-w-xs" />}
+        <SearchInput className="min-w-[200px] flex-1" value={q} onChange={(v) => { setQ(v); setPage(1); }} placeholder="Search options" />
         <Button size="sm" variant="outline" className="h-10" onClick={() => adminApi.download(`/master-data/${type}/export`, {}, `${type}.xlsx`)}>
           Export
         </Button>
-        <label className="inline-flex h-10 cursor-pointer items-center rounded-md border border-brand-border px-3.5 text-[13px] font-semibold text-brand-dark hover:border-brand-blue">
+        <label className="inline-flex h-10 cursor-pointer items-center rounded-md border border-brand-border px-3.5 text-[13px] font-semibold text-brand-dark hover:border-[#AEB7C4]" title="Excel columns: Name, Parent, Order, Active">
           Import
           <input type="file" accept=".xlsx,.csv" hidden onChange={(e) => e.target.files?.[0] && importList.mutate(e.target.files[0])} />
         </label>
-        <form
-          className="flex flex-1 gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (name.trim()) add.mutate();
-          }}
-        >
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New option" aria-label="New option" className="h-10 min-w-0 flex-1 rounded-lg border border-brand-border px-3 text-sm outline-none focus:border-[#98A2B3]" />
-          <Button type="submit" size="sm" variant="primary" loading={add.isPending}>
-            Add
-          </Button>
-        </form>
       </div>
+      <form
+        className="mb-4 flex flex-wrap gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!name.trim()) return;
+          if (parentType && !parent) {
+            toast.error('Choose the parent for this option');
+            return;
+          }
+          add.mutate();
+        }}
+      >
+        {parentType && <SimpleSelect ariaLabel="Parent of the new option" value={parent} onChange={setParent} options={[{ value: '', label: 'Choose parent' }, ...parentOptions]} className="min-w-[220px] max-w-xs" />}
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New option" aria-label="New option" maxLength={200} className="h-10 min-w-[180px] flex-1 rounded-lg border border-brand-border px-3 text-sm outline-none focus:border-[#98A2B3]" />
+        <Button type="submit" size="sm" variant="primary" loading={add.isPending}>
+          Add option
+        </Button>
+      </form>
       <DataTable
         columns={[
           { key: 'name', header: 'Name' },
-          { key: 'active', header: 'Active', render: (o) => <input type="checkbox" aria-label="Active" checked={o.isActive !== false} onChange={(e) => toggle.mutate({ id: o._id, isActive: e.target.checked })} /> },
+          ...(parentType ? [{ key: 'parent', header: 'Parent', render: parentLabel }] : []),
+          { key: 'active', header: 'Active', render: (o) => <input type="checkbox" aria-label={`${o.name} active`} checked={o.isActive !== false} onChange={(e) => toggle.mutate({ id: o._id, isActive: e.target.checked })} /> },
           { key: 'added', header: 'Added by users', render: (o) => (o.isUserAdded ? 'Yes' : 'No') },
+          { key: 'used', header: 'Used', render: (o) => o.usageCount || 0 },
         ]}
         rows={query.data?.data}
         query={query}
         actions={(o) => (
-          <Button size="sm" variant="dangerGhost" onClick={() => remove.mutate(o._id)}>
-            Delete
-          </Button>
+          <span className="inline-flex gap-1">
+            <Button size="sm" variant="ghost" onClick={() => setRenaming(o)}>
+              Rename
+            </Button>
+            <Button size="sm" variant="dangerGhost" onClick={() => setRemoving(o)}>
+              Delete
+            </Button>
+          </span>
         )}
+      />
+      <Pagination meta={query.data?.meta} onPage={setPage} />
+      {renaming && <RenameOption option={renaming} onClose={() => setRenaming(null)} />}
+      <ConfirmDialog
+        open={Boolean(removing)}
+        onClose={() => setRemoving(null)}
+        title={`Delete "${removing?.name}"?`}
+        message="Profiles and jobs that already use it keep their value. To hide it from new forms only, untick Active instead."
+        danger
+        confirmLabel="Delete"
+        loading={remove.isPending}
+        onConfirm={() => remove.mutate(removing._id)}
       />
     </div>
   );

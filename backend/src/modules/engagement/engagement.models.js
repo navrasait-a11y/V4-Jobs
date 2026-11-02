@@ -87,7 +87,7 @@ const profileAccessSchema = new Schema(
     organization: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
     member: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     candidate: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-    type: { type: String, enum: ['view', 'contact_unlock', 'resume_download'], required: true },
+    type: { type: String, enum: ['view', 'contact_unlock', 'resume_download', 'excel_download'], required: true },
     source: String,
   },
   { timestamps: { createdAt: true, updatedAt: false } },
@@ -112,6 +112,18 @@ const jobInviteSchema = new Schema(
 );
 jobInviteSchema.index({ job: 1, candidate: 1 }, { unique: true });
 
+/** "Request Call Back" on a job (Mode of Interview: I / other recruiter will contact candidates). */
+const callbackRequestSchema = new Schema(
+  {
+    job: { type: Schema.Types.ObjectId, ref: 'Job', required: true },
+    organization: { type: Schema.Types.ObjectId, ref: 'Organization', required: true, index: true },
+    candidate: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    status: { type: String, enum: ['pending', 'called'], default: 'pending' },
+  },
+  { timestamps: true },
+);
+callbackRequestSchema.index({ job: 1, candidate: 1 }, { unique: true });
+
 export const Follow = mongoose.models.Follow || mongoose.model('Follow', followSchema);
 export const SavedJob = mongoose.models.SavedJob || mongoose.model('SavedJob', savedJobSchema);
 export const SavedSearch = mongoose.models.SavedSearch || mongoose.model('SavedSearch', savedSearchSchema);
@@ -119,3 +131,4 @@ export const RecentSearch = mongoose.models.RecentSearch || mongoose.model('Rece
 export const CandidateFolder = mongoose.models.CandidateFolder || mongoose.model('CandidateFolder', folderSchema);
 export const ProfileAccess = mongoose.models.ProfileAccess || mongoose.model('ProfileAccess', profileAccessSchema);
 export const JobInvite = mongoose.models.JobInvite || mongoose.model('JobInvite', jobInviteSchema);
+export const CallbackRequest = mongoose.models.CallbackRequest || mongoose.model('CallbackRequest', callbackRequestSchema);

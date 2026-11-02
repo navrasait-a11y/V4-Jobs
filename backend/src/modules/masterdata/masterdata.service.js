@@ -1,7 +1,7 @@
 import ApiError from '../../shared/errors/ApiError.js';
 import { escapeRegex, slugify } from '../../shared/utils/helpers.js';
 import { parseWorkbook } from '../../shared/utils/excel.js';
-import { Lookup, Location, LOOKUP_TYPES, USER_ADDABLE_TYPES } from './masterdata.models.js';
+import { Lookup, Location, LOOKUP_TYPES, PARENT_TYPE, USER_ADDABLE_TYPES } from './masterdata.models.js';
 
 const CACHE_MS = 5 * 60 * 1000;
 const cache = new Map();
@@ -13,22 +13,58 @@ export function assertType(type) {
 
 export const listTypes = () => Object.entries(LOOKUP_TYPES).map(([key, label]) => ({ key, label, userAddable: USER_ADDABLE_TYPES.includes(key) }));
 
-/** Suggestions for a dropdown / type-ahead. Results are cached per (type,parent,q). */
-export async function search(type, { q, parent, limit = 50, includeInactive = false } = {}) {
+/**
+ * Parent ids from parent names, e.g. industries for sub industries. A specialisation parent can be
+ * "Graduate>B.Com" because the same degree name exists under more than one education level.
+ */
+async function resolveParents(type, names) {
+  const parentType = PARENT_TYPE[type];
+  if (!parentType) throw ApiError.badRequest(`"${type}" has no parent options`, undefined, 'INVALID_LOOKUP_PARENT');
+  const ids = new Map();
+  const plain = names.filter((n) => !n.includes('>'));
+  if (plain.length) {
+    const rows = await Lookup.find({ type: parentType, slug: { $in: plain.map(slugify) } }).select('name').lean();
+    for (const r of rows) ids.set(String(r._id), r.name);
+  }
+  for (const path of names.filter((n) => n.includes('>'))) {
+    const [grand, name] = path.split('>').map((x) => x.trim());
+    const grandType = PARENT_TYPE[parentType];
+    const g = grandType && (await Lookup.findOne({ type: grandType, slug: slugify(grand) }).select('_id').lean());
+    const row = g && (await Lookup.findOne({ type: parentType, slug: slugify(name), parent: g._id }).select('name').lean());
+    if (row) ids.set(String(row._id), row.name);
+  }
+  return ids;
+}
+
+/** Suggestions for a dropdown / type-ahead. Results are cached per (type,parent,parents,q). */
+export async function search(type, { q, parent, parents, limit = 50, includeInactive = false } = {}) {
   assertType(type);
-  const key = `${type}|${parent || ''}|${q || ''}|${limit}|${includeInactive}`;
+  const key = `${type}|${parent || ''}|${parents || ''}|${q || ''}|${limit}|${includeInactive}`;
   const hit = cache.get(key);
   if (hit && hit.exp > Date.now()) return hit.value;
 
   const filter = { type };
   if (!includeInactive) filter.isActive = true;
   if (parent) filter.parent = parent;
-  if (q) filter.name = new RegExp(`(^|\\s)${escapeRegex(q.slice(0, 60))}`, 'i');
-  const value = await Lookup.find(filter)
+  let parentNames = null;
+  if (parents) {
+    parentNames = await resolveParents(
+      type,
+      parents
+        .split('|')
+        .map((p) => p.trim())
+        .filter(Boolean)
+        .slice(0, 10),
+    );
+    filter.parent = { $in: [...parentNames.keys()] };
+  }
+  if (q) filter.name = new RegExp(`(^|[\\s(/-])${escapeRegex(q.slice(0, 60))}`, 'i');
+  let value = await Lookup.find(filter)
     .select('name slug parent order isUserAdded')
-    .sort(q ? { usageCount: -1, name: 1 } : { order: 1, name: 1 })
+    .sort(q ? { usageCount: -1, order: 1, name: 1 } : { order: 1, name: 1 })
     .limit(Math.min(limit, 500))
     .lean();
+  if (parentNames) value = value.map((v) => ({ ...v, parentName: parentNames.get(String(v.parent)) }));
   cache.set(key, { value, exp: Date.now() + CACHE_MS });
   if (cache.size > 5000) clearCache();
   return value;
@@ -85,18 +121,32 @@ export async function adminList(type, { q, parent, page, limit, skip, isUserAdde
   if (q) filter.name = new RegExp(escapeRegex(q), 'i');
   if (isUserAdded !== undefined) filter.isUserAdded = isUserAdded;
   const [items, total] = await Promise.all([
-    Lookup.find(filter).populate('parent', 'name type').sort({ order: 1, name: 1 }).skip(skip).limit(limit).lean(),
+    Lookup.find(filter)
+      .populate({ path: 'parent', select: 'name type parent', populate: { path: 'parent', select: 'name' } })
+      .sort({ order: 1, name: 1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
     Lookup.countDocuments(filter),
   ]);
   return { items, total, page, limit };
 }
 
-/** Excel import: columns Name | Parent (optional, matched by name within parentType) | Order | Active */
+/**
+ * Excel import: columns Name | Parent | Order | Active. Parent is matched by name within the parent
+ * type; for specialisations it may be "Level>Degree" because degree names repeat across levels.
+ */
 export async function importLookups(type, buffer, { parentType, userId }) {
   assertType(type);
   const rows = await parseWorkbook(buffer, { name: 'name', parent: 'parent', order: 'order', active: 'active' });
-  const parents = parentType ? await Lookup.find({ type: parentType }).select('name slug').lean() : [];
+  const ofType = parentType || PARENT_TYPE[type];
+  const parents = ofType ? await Lookup.find({ type: ofType }).select('name slug').lean() : [];
   const parentBySlug = new Map(parents.map((p) => [p.slug, p._id]));
+  const byPath = new Map();
+  for (const path of new Set(rows.map((r) => String(r.parent || '')).filter((p) => p.includes('>')))) {
+    const [id] = (await resolveParents(type, [path])).keys();
+    if (id) byPath.set(path, id);
+  }
   const ops = [];
   const errors = [];
   for (const row of rows) {
@@ -105,7 +155,7 @@ export async function importLookups(type, buffer, { parentType, userId }) {
       errors.push({ row: row.__row, message: 'Name is required' });
       continue;
     }
-    const parent = row.parent ? parentBySlug.get(slugify(row.parent)) : undefined;
+    const parent = row.parent ? (String(row.parent).includes('>') ? byPath.get(String(row.parent)) : parentBySlug.get(slugify(row.parent))) : undefined;
     if (row.parent && !parent) {
       errors.push({ row: row.__row, message: `Parent "${row.parent}" not found` });
       continue;
@@ -129,7 +179,9 @@ export async function importLookups(type, buffer, { parentType, userId }) {
 
 export async function exportLookups(type) {
   assertType(type);
-  return Lookup.find({ type }).populate('parent', 'name').sort({ order: 1, name: 1 }).lean();
+  const rows = await Lookup.find({ type }).populate({ path: 'parent', select: 'name parent', populate: { path: 'parent', select: 'name' } }).sort({ order: 1, name: 1 }).lean();
+  // Specialisations export their parent as "Level>Degree" so the file imports back unchanged.
+  return rows.map((r) => ({ ...r, parentLabel: r.parent ? (type === 'specialisation' && r.parent.parent?.name ? `${r.parent.parent.name}>${r.parent.name}` : r.parent.name) : '' }));
 }
 
 /* --------------------------------------------------------------- Locations */
@@ -209,4 +261,39 @@ export async function importLocations(buffer) {
 export function touchUsage(type, names = []) {
   if (!names.length) return;
   Lookup.updateMany({ type, slug: { $in: names.map(slugify) } }, { $inc: { usageCount: 1 } }).catch(() => {});
+}
+
+const EARTH_KM = 6371;
+const rad = (d) => (d * Math.PI) / 180;
+function distanceKm(a, b) {
+  const dLat = rad(b.lat - a.lat);
+  const dLng = rad(b.lng - a.lng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * EARTH_KM * Math.asin(Math.sqrt(h));
+}
+
+/**
+ * "Show jobs / candidates within N km": the picked cities plus every city whose centre lies
+ * within `km` of one of them. Cities without coordinates match only themselves.
+ */
+export async function citiesWithin(names = [], km) {
+  const picked = [...new Set(names.map((n) => String(n).trim()).filter(Boolean))];
+  if (!picked.length || !km) return picked;
+  const centres = await Location.find({ city: { $in: picked.map((n) => new RegExp(`^${escapeRegex(n)}$`, 'i')) }, 'geo.lat': { $ne: null } })
+    .select('city geo')
+    .lean();
+  const out = new Set(picked);
+  for (const c of centres) {
+    const dLat = km / 111;
+    const dLng = km / (111 * Math.max(Math.cos(rad(c.geo.lat)), 0.01));
+    const near = await Location.find({
+      isActive: true,
+      'geo.lat': { $gte: c.geo.lat - dLat, $lte: c.geo.lat + dLat },
+      'geo.lng': { $gte: c.geo.lng - dLng, $lte: c.geo.lng + dLng },
+    })
+      .select('city geo')
+      .lean();
+    for (const n of near) if (distanceKm(c.geo, n.geo) <= km) out.add(n.city);
+  }
+  return [...out].slice(0, 200);
 }

@@ -2,12 +2,13 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import AccountSecurity from '../../components/shared/AccountSecurity';
+import ChangeContact from '../../components/shared/ChangeContact';
 import Button from '../../components/ui/Button';
 import { PageHeader, Pagination, Section, Tabs } from '../../components/ui/data';
 import { ConfirmDialog, ErrorState, PageLoader } from '../../components/ui/feedback';
-import { CheckboxField, SelectField, TextAreaField, TextField } from '../../components/ui/form';
+import { CheckboxField, SelectField, TextAreaField } from '../../components/ui/form';
 import useAuth from '../../hooks/useAuth';
-import { useAction, useCandidateProfile, useDocumentTitle, usePublicSettings } from '../../hooks/useData';
+import { useAction, useCandidateProfile, useDocumentTitle, usePublicSettings, useUrlFilters } from '../../hooks/useData';
 import { authApi, candidateApi, moderationApi } from '../../services';
 import { formatDateTime, titleCase } from '../../utils/format';
 
@@ -99,48 +100,6 @@ const Activity = () => {
   );
 };
 
-const ChangeContact = () => {
-  const { user, loadMe } = useAuth();
-  const [kind, setKind] = useState('email');
-  const [value, setValue] = useState('');
-  const [otp, setOtp] = useState('');
-  const [sent, setSent] = useState(false);
-  const request = useAction(() => authApi.changeContact({ [kind]: value }), { success: 'OTP sent to the new contact', onSuccess: () => setSent(true) });
-  const confirm = useAction(() => authApi.confirmContact({ [kind]: value, otp }), {
-    success: 'Contact updated',
-    onSuccess: () => {
-      setSent(false);
-      setValue('');
-      setOtp('');
-      loadMe();
-    },
-  });
-  return (
-    <Section title="Change e-mail or mobile">
-      <p className="mb-3 text-sm text-brand-gray">
-        Current: {user.email} · {user.mobile}
-      </p>
-      <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-[140px_1fr_auto]">
-        <SelectField label="Change" placeholder={null} options={[{ value: 'email', label: 'E-mail' }, { value: 'mobile', label: 'Mobile' }]} value={kind} onChange={(e) => { setKind(e.target.value); setSent(false); setValue(''); }} />
-        <TextField label={kind === 'email' ? 'New e-mail' : 'New mobile'} type={kind === 'email' ? 'email' : 'tel'} value={value} disabled={sent} onChange={(e) => setValue(e.target.value)} />
-        {!sent && (
-          <Button size="sm" variant="outline" className="h-11" disabled={!value} loading={request.isPending} onClick={() => request.mutate()}>
-            Send OTP
-          </Button>
-        )}
-      </div>
-      {sent && (
-        <div className="mt-3 flex items-end gap-2">
-          <TextField className="flex-1" label="OTP" inputMode="numeric" autoComplete="one-time-code" value={otp} onChange={(e) => setOtp(e.target.value)} />
-          <Button size="sm" variant="primaryBlue" className="h-11" disabled={!otp} loading={confirm.isPending} onClick={() => confirm.mutate()}>
-            Confirm
-          </Button>
-        </div>
-      )}
-    </Section>
-  );
-};
-
 const Danger = () => {
   const settings = usePublicSettings();
   const { clear } = useAuth();
@@ -174,7 +133,9 @@ const Danger = () => {
 
 const Settings = () => {
   useDocumentTitle('Settings');
-  const [tab, setTab] = useState('preferences');
+  const [filters, setFilters] = useUrlFilters({ tab: 'preferences' });
+  const { tab } = filters;
+  const setTab = (next) => setFilters({ tab: next });
   const query = useCandidateProfile();
   if (query.isPending) return <PageLoader />;
   if (query.isError) return <ErrorState error={query.error} onRetry={query.refetch} />;

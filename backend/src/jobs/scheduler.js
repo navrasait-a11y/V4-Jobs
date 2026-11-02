@@ -3,7 +3,7 @@ import logger from '../config/logger.js';
 import { withLock } from './lock.js';
 import { expireJobs } from '../modules/jobs/job.service.js';
 import { processDueAlerts } from '../modules/alerts/alert.service.js';
-import { sendInterviewReminders } from '../modules/applications/application.service.js';
+import { sendInterviewReminders, sendDailyResponseSummaries } from '../modules/applications/application.service.js';
 import { processSubscriptionLifecycle } from '../modules/billing/billing.service.js';
 import { sendProfileReminders } from './tasks.js';
 
@@ -32,6 +32,7 @@ export function startScheduler() {
   schedule('interview-reminders', '*/15 * * * *', sendInterviewReminders);
   schedule('subscriptions', '0 * * * *', processSubscriptionLifecycle);
   schedule('profile-reminders', '0 11 * * *', sendProfileReminders, 60 * 60 * 1000);
+  schedule('daily-response-summary', '0 9 * * *', sendDailyResponseSummaries, 30 * 60 * 1000);
   logger.info({ tasks: tasks.length }, 'Scheduler started');
 }
 

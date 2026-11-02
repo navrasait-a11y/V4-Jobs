@@ -58,7 +58,7 @@ publicRouter.get(
   '/master-data/:type',
   validate({
     params: typeParam,
-    query: Joi.object({ q: Joi.string().trim().max(60).allow(''), parent: objectId, limit: Joi.number().integer().min(1).max(500).default(50) }),
+    query: Joi.object({ q: Joi.string().trim().max(60).allow(''), parent: objectId, parents: Joi.string().trim().max(2000), limit: Joi.number().integer().min(1).max(500).default(50) }),
   }),
   async (req, res) => {
     res.set('Cache-Control', 'public, max-age=300');
@@ -129,7 +129,7 @@ adminRouter.get('/master-data/:type/export', validate({ params: typeParam, query
     filename: `${req.params.type}-options`,
     columns: [
       { header: 'Name', key: 'name' },
-      { header: 'Parent', key: 'parent', get: (r) => r.parent?.name || '' },
+      { header: 'Parent', key: 'parentLabel' },
       { header: 'Order', key: 'order' },
       { header: 'Active', key: 'isActive', get: (r) => (r.isActive ? 'Yes' : 'No') },
       { header: 'User Added', key: 'isUserAdded', get: (r) => (r.isUserAdded ? 'Yes' : 'No') },

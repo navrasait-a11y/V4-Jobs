@@ -2,11 +2,11 @@ import { Router } from 'express';
 import Joi from 'joi';
 import validate from '../../shared/middleware/validate.js';
 import { authenticate, authorize, optionalAuth, requireEmployer } from '../../shared/middleware/auth.js';
-import { formLimiter, heavyLimiter } from '../../shared/middleware/rateLimit.js';
+import { formLimiter, heavyLimiter, otpLimiter } from '../../shared/middleware/rateLimit.js';
 import { upload } from '../../shared/middleware/upload.js';
 import { ok, created, paginated } from '../../shared/http/response.js';
 import { parsePagination } from '../../shared/utils/pagination.js';
-import { objectId, idParam, pagination } from '../../shared/validators/common.js';
+import { objectId, idParam, pagination, mobile } from '../../shared/validators/common.js';
 import { ROLES } from '../../shared/constants/index.js';
 import ApiError from '../../shared/errors/ApiError.js';
 import Job from './job.model.js';
@@ -32,6 +32,9 @@ publicJobs.get('/recommended', authenticate, authorize(ROLES.CANDIDATE), validat
 publicJobs.get('/saved', authenticate, authorize(ROLES.CANDIDATE), validate({ query: Joi.object(pagination) }), async (req, res) =>
   paginated(res, await s.listSavedJobs(req.user._id, parsePagination(req.query))),
 );
+publicJobs.post('/guest-post/otp', otpLimiter, validate({ body: Joi.object({ mobile: mobile.required() }) }), async (req, res) =>
+  ok(res, await s.guestPostOtp(req.body), 'OTP sent'),
+);
 publicJobs.post('/guest-post', formLimiter, validate(v.guestPost), async (req, res) => created(res, await s.guestPostJob(req, req.body), 'Job submitted'));
 publicJobs.get('/:idOrSlug', optionalAuth, validate({ params: Joi.object({ idOrSlug: Joi.string().max(200).required() }) }), async (req, res) =>
   ok(res, await s.getPublicJob(req.params.idOrSlug, req.user)),
@@ -48,6 +51,9 @@ publicJobs.get('/:id/share', validate({ params: idParam }), async (req, res) => 
 });
 publicJobs.post('/:id/save', authenticate, authorize(ROLES.CANDIDATE), validate({ params: idParam }), async (req, res) =>
   ok(res, await s.saveJob(req.user._id, req.params.id), 'Job saved'),
+);
+publicJobs.post('/:id/callback', authenticate, authorize(ROLES.CANDIDATE), validate({ params: idParam }), async (req, res) =>
+  ok(res, await s.requestCallback(req.user, req.params.id), 'Call back requested'),
 );
 publicJobs.delete('/:id/save', authenticate, authorize(ROLES.CANDIDATE), validate({ params: idParam }), async (req, res) =>
   ok(res, await s.unsaveJob(req.user._id, req.params.id), 'Removed from saved'),
@@ -102,6 +108,9 @@ employerJobs.put(
   requireEmployer('job.share_internal', 'job.manage_all'),
   validate({ params: idParam, body: Joi.object({ memberIds: Joi.array().items(objectId).max(50).required() }) }),
   async (req, res) => ok(res, await s.setCollaborators(req.user, req.params.id, req.body.memberIds), 'Collaborators updated'),
+);
+employerJobs.get('/:id/callbacks', requireEmployer(), validate({ params: idParam, query: Joi.object(pagination) }), async (req, res) =>
+  paginated(res, await s.listCallbacks(req.user, req.params.id, parsePagination(req.query))),
 );
 employerJobs.get('/:id/share', requireEmployer(), validate({ params: idParam }), async (req, res) =>
   ok(res, s.shareLinks(await s.getManageableJob(req.user, req.params.id))),

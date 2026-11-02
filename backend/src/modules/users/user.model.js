@@ -77,6 +77,7 @@ const userSchema = new Schema(
       memberRole: { type: String, enum: EMPLOYER_MEMBER_ROLES },
       designation: String,
       department: [String],
+      functions: [String],
       hiringAuthority: String,
       permissions: { type: [String], enum: EMPLOYER_PERMISSIONS, default: undefined },
       quotas: quotaSchema,

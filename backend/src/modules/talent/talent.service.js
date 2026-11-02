@@ -15,6 +15,7 @@ import { consume } from '../billing/usage.service.js';
 import { notify, sendEmail } from '../notifications/notification.service.js';
 import { getWeights, scoreMatch } from '../matching/matching.service.js';
 import { buildTalentQuery, talentSort } from './talent.query.js';
+import { citiesWithin } from '../masterdata/masterdata.service.js';
 
 const MAX_RESULTS = 5000;
 const CARD_FIELDS = {
@@ -88,19 +89,35 @@ function toCard(profile, user, { unlocked, tracking }) {
     profileCompletion: profile.profileCompletion,
     isBoosted: profile.boostUntil > new Date(),
     profileUpdatedAt: profile.updatedAt,
-    tracking: tracking ? { screeningStatus: tracking.screeningStatus, callingStatus: tracking.callingStatus, messagingStatus: tracking.messagingStatus } : null,
+    tracking: tracking
+      ? { stage: tracking.stage, screeningStatus: tracking.screeningStatus, callingStatus: tracking.callingStatus, messagingStatus: tracking.messagingStatus }
+      : null,
   };
 }
 
 /* ----------------------------------------------------------------- search */
+
+/** "Hide candidates that are": already unlocked / viewed / downloaded in Excel / invited / invited by WhatsApp. */
+async function alreadyHandledIds(orgId, hide = []) {
+  if (!hide?.length) return [];
+  const types = { unlocked: 'contact_unlock', viewed: 'view', downloaded: 'excel_download' };
+  const accessTypes = hide.map((h) => types[h]).filter(Boolean);
+  const [access, invited, whatsapp] = await Promise.all([
+    accessTypes.length ? ProfileAccess.distinct('candidate', { organization: orgId, type: { $in: accessTypes } }) : [],
+    hide.includes('invited') ? JobInvite.distinct('candidate', { organization: orgId }) : [],
+    hide.includes('invited_whatsapp') ? CandidateTracking.distinct('candidate', { organization: orgId, messagingStatus: 'whatsapp_done' }) : [],
+  ]);
+  return [...access, ...invited, ...whatsapp];
+}
 
 export async function search(member, filters, { page, limit }) {
   const orgId = member.employer.organization;
   await assertResumeAccess(orgId);
   await consume(member, 'resume_search', 1);
 
-  const { candidateFilter, userFilter } = buildTalentQuery(filters);
-  const hidden = await hiddenCandidateIdsFor(orgId);
+  const nearCities = filters.distanceKm && filters.locations?.length ? await citiesWithin(filters.locations, filters.distanceKm) : undefined;
+  const { candidateFilter, userFilter, postFilter } = buildTalentQuery({ ...filters, nearCities });
+  const hidden = [...(await hiddenCandidateIdsFor(orgId)), ...(await alreadyHandledIds(orgId, filters.hide))];
   if (hidden.length) candidateFilter.user = { $nin: hidden };
   const hasText = Boolean(candidateFilter.$text);
   delete userFilter.role;
@@ -135,6 +152,7 @@ export async function search(member, filters, { page, limit }) {
       },
     },
     { $unwind: '$u' },
+    ...(postFilter ? [{ $match: postFilter }] : []),
     {
       $sort: hasText
         ? { _score: -1, boostUntil: -1, profileCompletion: -1 }
@@ -296,6 +314,7 @@ export async function updateTracking(member, candidateId, data) {
   await assertVisible(orgId, candidateId);
   const update = { $set: { updatedBy: member._id } };
   for (const k of ['screeningStatus', 'callingStatus']) if (data[k]) update.$set[k] = data[k];
+  if (data.stage !== undefined) update.$set.stage = data.stage || null;
   if (data.messagingStatus) update.$addToSet = { messagingStatus: { $each: data.messagingStatus } };
   const push = {};
   if (data.comment) push.comments = { body: data.comment, by: member._id, at: new Date() };

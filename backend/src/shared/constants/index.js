@@ -105,7 +105,8 @@ export const DEFAULT_MEMBER_PERMISSIONS = Object.freeze({
 });
 
 /** Metered actions for credits (organisation level) and quotas (member level). */
-export const USAGE_METRICS = Object.freeze(['job_post', 'resume_view', 'resume_download', 'invite', 'excel_download', 'resume_search', 'hiring']);
+// response_download_own / _all: applicant responses exported to Excel (Excel "Account Member Usage Analytics").
+export const USAGE_METRICS = Object.freeze(['job_post', 'resume_view', 'resume_download', 'invite', 'excel_download', 'resume_search', 'hiring', 'response_download_own', 'response_download_all']);
 export const QUOTA_PERIODS = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly'];
 export const MAX_EMPLOYER_MEMBERS = 50;
 
@@ -191,6 +192,18 @@ export const BULK_LIMITS = Object.freeze({
 });
 
 export const TIMESPANS = ['24h', '7d', '14d', '30d', '90d', '120d', '6m', '9m', '12m', 'custom'];
+/* "Other Forms" Excel (20-Oct-2026): fixed numeric options shared by job post, job search and candidate search. */
+export const DISTANCE_KM = [5, 10, 15, 20, 25, 35, 50, 75, 100, 150, 200];
+export const DATE_POSTED_DAYS = [1, 2, 4, 7, 10, 15];
+export const LAST_ACTIVE_DAYS = [1, 2, 4, 7, 10, 15, 30, 60, 90, 180, 365];
+export const AGE_LIMITS = { min: 18, max: 61 }; // 61 = "60+ Years"
+export const QUESTION_TYPES = ['single_choice', 'multiple_choice', 'short_answer', 'text', 'number'];
+export const LEGACY_QUESTION_TYPES = ['yes_no', 'choice'];
+export const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+export const CANDIDATE_TYPES = ['new', 'modified', 'active', 'trending', 'featured', 'premium'];
+export const CANDIDATES_WITH = ['verified_mobile', 'whatsapp', 'verified_email', 'resume'];
+export const HIDE_CANDIDATES = ['unlocked', 'viewed', 'downloaded', 'invited', 'invited_whatsapp'];
+
 export const ACTIVE_IN_DAYS = { '1d': 1, '2d': 2, '5d': 5, '7d': 7, '15d': 15, '30d': 30, '45d': 45, '2m': 60, '4m': 120, '6m': 180, '1y': 365, '2y': 730 };
 
 export const USERNAME_REGEX = /^(?!_)[A-Za-z0-9_]{3,30}(?<!_)$/;
