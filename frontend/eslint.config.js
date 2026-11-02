@@ -24,4 +24,9 @@ export default defineConfig([
       'react-hooks/set-state-in-effect': 'off',
     },
   },
+  {
+    // Config files run in Node, not the browser, so they need Node globals (process, __dirname, etc.).
+    files: ['vite.config.js', 'eslint.config.js', '*.config.{js,mjs,cjs}'],
+    languageOptions: { globals: globals.node },
+  },
 ])
