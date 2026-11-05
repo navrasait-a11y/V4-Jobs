@@ -105,19 +105,102 @@ const Suggestions = ({ source, term, recent, popular, matches, active, onRecent,
   );
 };
 
+const parseChips = (val) => {
+  if (!val) return [];
+  if (Array.isArray(val)) return val.map((s) => String(s).trim()).filter(Boolean);
+  return String(val)
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+};
+
 /**
  * Search box for jobs (`kind="job"`) or places (`kind="location"`). Focus opens recent and popular
  * options, typing adds live suggestions.
+ * For `kind="job"`, supports tag chips (e.g. Node.js ✕, MongoDB ✕) on comma / Enter / suggestion click.
  * Desktop shows a panel under `anchorRef`, phones get a full-screen search sheet.
  */
-const JobSearchInput = ({ kind = 'job', value, onChange, onSearch, onEnter, anchorRef, placeholder, inputClassName = 'h-11 w-full bg-transparent text-sm text-brand-dark outline-none placeholder:text-brand-gray-muted' }) => {
+const JobSearchInput = ({
+  kind = 'job',
+  value = '',
+  onChange,
+  onSearch,
+  onEnter,
+  anchorRef,
+  placeholder,
+  inputClassName = 'h-11 w-full bg-transparent text-sm text-brand-dark outline-none placeholder:text-brand-gray-muted',
+  multi = kind === 'job',
+}) => {
   const source = SOURCES[kind];
   const [open, setOpen] = useState(false);
   const [phone, setPhone] = useState(false);
   const [active, setActive] = useState(-1);
   const [recent, setRecent] = useState(source.recent);
+  const [chips, setChips] = useState(() => (multi ? parseChips(value) : []));
+  const [draft, setDraft] = useState('');
+  const lastReported = useRef(value);
+  const inputRef = useRef(null);
+  const scrollContainerRef = useRef(null);
   const sheetInput = useRef(null);
-  const term = useDebounce(value, 200);
+
+  const scrollToInput = () => {
+    requestAnimationFrame(() => {
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollLeft = scrollContainerRef.current.scrollWidth;
+      }
+    });
+  };
+
+  // Sync external value changes (e.g. navigation or reset)
+  useEffect(() => {
+    if (!multi) return;
+    if (value !== lastReported.current) {
+      setChips(parseChips(value));
+      lastReported.current = value;
+    }
+  }, [multi, value]);
+
+  const emitChange = (nextChips, uncommitted = '') => {
+    const combined = [...nextChips];
+    const cleanDraft = uncommitted.trim();
+    if (cleanDraft && !combined.some((c) => c.toLowerCase() === cleanDraft.toLowerCase())) {
+      combined.push(cleanDraft);
+    }
+    const serialized = combined.join(', ');
+    lastReported.current = serialized;
+    onChange?.(serialized);
+    return serialized;
+  };
+
+  const addChip = (text) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    if (chips.some((c) => c.toLowerCase() === trimmed.toLowerCase())) {
+      setDraft('');
+      return;
+    }
+    const next = [...chips, trimmed];
+    setChips(next);
+    setDraft('');
+    emitChange(next, '');
+    scrollToInput();
+  };
+
+  const removeChip = (idx) => {
+    const next = chips.filter((_, i) => i !== idx);
+    setChips(next);
+    emitChange(next, draft);
+  };
+
+  const clearAll = () => {
+    setChips([]);
+    setDraft('');
+    emitChange([]);
+    inputRef.current?.focus();
+  };
+
+  const currentTerm = multi ? draft : value;
+  const term = useDebounce(currentTerm, 200);
   const hasTerm = term.trim().length >= 2;
 
   const { data: popular = [] } = useQuery({
@@ -132,8 +215,18 @@ const JobSearchInput = ({ kind = 'job', value, onChange, onSearch, onEnter, anch
     enabled: open && hasTerm,
     staleTime: 5 * 60 * 1000,
   });
-  const matches = found.filter((m) => m.toLowerCase() !== value.trim().toLowerCase()).slice(0, 6);
-  const shownRecent = hasTerm ? recent.filter((r) => source.label(r).toLowerCase().includes(term.trim().toLowerCase())).slice(0, 2) : recent;
+
+  const matches = found
+    .filter((m) => {
+      const lower = m.toLowerCase();
+      if (multi && chips.some((c) => c.toLowerCase() === lower)) return false;
+      return lower !== currentTerm.trim().toLowerCase();
+    })
+    .slice(0, 6);
+
+  const shownRecent = hasTerm
+    ? recent.filter((r) => source.label(r).toLowerCase().includes(term.trim().toLowerCase())).slice(0, 2)
+    : recent;
   const hasContent = shownRecent.length > 0 || (hasTerm ? matches.length > 0 : popular.length > 0);
 
   const show = () => {
@@ -143,22 +236,30 @@ const JobSearchInput = ({ kind = 'job', value, onChange, onSearch, onEnter, anch
     setOpen(true);
   };
   const close = () => setOpen(false);
+
   const pickRecent = (r) => {
     close();
-    onSearch(r);
+    onSearch?.(r);
   };
+
   const pickTerm = (text) => {
-    close();
-    onSearch({ [source.field]: text });
+    if (multi) {
+      addChip(text);
+      close();
+      inputRef.current?.focus();
+    } else {
+      close();
+      onSearch?.({ [source.field]: text });
+    }
   };
 
   useEffect(() => {
     if (!open || !phone) return undefined;
     sheetInput.current?.focus();
-    // The tap that opened the sheet finishes after this, and can pull focus back to the page input.
     const again = setTimeout(() => sheetInput.current?.focus(), 80);
     return () => clearTimeout(again);
   }, [open, phone]);
+
   useEffect(() => {
     if (!open || !phone) return undefined;
     const before = document.body.style.overflow;
@@ -184,17 +285,80 @@ const JobSearchInput = ({ kind = 'job', value, onChange, onSearch, onEnter, anch
         e.preventDefault();
         if (active < shownRecent.length) pickRecent(shownRecent[active]);
         else pickTerm(matches[active - shownRecent.length]);
+      } else if (multi) {
+        if (draft.trim()) {
+          e.preventDefault();
+          const next = [...chips, draft.trim()];
+          setChips(next);
+          setDraft('');
+          emitChange(next, '');
+          close();
+          onEnter?.();
+        } else {
+          close();
+          onEnter?.();
+        }
       } else if (!phone) {
         close();
         onEnter?.();
       }
+    } else if (multi && (e.key === ',' || e.key === 'Tab')) {
+      if (draft.trim()) {
+        e.preventDefault();
+        addChip(draft);
+      }
+    } else if (multi && e.key === 'Backspace' && !draft && chips.length > 0) {
+      e.preventDefault();
+      removeChip(chips.length - 1);
     }
+  };
+
+  const handleInputChange = (e) => {
+    const val = e.target.value;
+    if (multi) {
+      if (val.includes(',')) {
+        const parts = val.split(',');
+        const newItems = parts.slice(0, -1).map((s) => s.trim()).filter(Boolean);
+        const remainder = parts[parts.length - 1];
+        if (newItems.length > 0) {
+          const next = [...chips];
+          for (const it of newItems) {
+            if (!next.some((c) => c.toLowerCase() === it.toLowerCase())) {
+              next.push(it);
+            }
+          }
+          setChips(next);
+          setDraft(remainder);
+          emitChange(next, remainder);
+          setActive(-1);
+          setOpen(true);
+          scrollToInput();
+          return;
+        }
+      }
+      setDraft(val);
+      emitChange(chips, val);
+      setActive(-1);
+      setOpen(true);
+      scrollToInput();
+    } else {
+      onChange(val);
+      setActive(-1);
+      setOpen(true);
+    }
+  };
+
+  const handleBlur = () => {
+    if (multi && draft.trim()) {
+      addChip(draft);
+    }
+    if (!phone) close();
   };
 
   const list = (
     <Suggestions
       source={source}
-      term={value}
+      term={currentTerm}
       recent={recent}
       popular={popular}
       matches={matches}
@@ -206,31 +370,106 @@ const JobSearchInput = ({ kind = 'job', value, onChange, onSearch, onEnter, anch
     />
   );
 
+  const hasFieldControl = inputClassName.includes('field-control');
+
   return (
     <>
-      <input
-        value={value}
-        autoComplete="off"
-        role="combobox"
-        aria-expanded={open}
-        aria-label={placeholder}
-        placeholder={placeholder}
-        onFocus={show}
-        onClick={() => !open && show()}
-        onBlur={() => !phone && close()} // two boxes share one anchor, so outside-click alone misses this
-        onChange={(e) => {
-          onChange(e.target.value);
-          setActive(-1);
-          setOpen(true);
-        }}
-        onKeyDown={onKeyDown}
-        className={inputClassName}
-      />
+      {multi ? (
+        <div
+          onClick={() => {
+            inputRef.current?.focus();
+            if (!open) show();
+          }}
+          className={clsx(
+            'relative flex h-11 items-center overflow-hidden transition-colors cursor-text',
+            hasFieldControl
+              ? clsx('field-control w-full', inputClassName.includes('pl-9') ? 'pl-9 pr-2' : 'px-2.5', open && 'is-open')
+              : 'min-w-0 flex-1 pr-1'
+          )}
+        >
+          <div
+            ref={scrollContainerRef}
+            className="no-scrollbar flex h-full min-w-0 flex-1 items-center gap-1.5 overflow-x-auto whitespace-nowrap py-1"
+          >
+            {chips.map((chip, idx) => (
+              <span
+                key={chip + idx}
+                className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md bg-[#EBF5FB] border border-[#CBE5F7] px-2 text-xs font-semibold text-[#0A6CB5] shadow-2xs transition-colors hover:bg-[#E1EFF9]"
+              >
+                <span className="max-w-[130px] truncate sm:max-w-[180px]">{chip}</span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    removeChip(idx);
+                    inputRef.current?.focus();
+                  }}
+                  className="rounded p-0.5 text-[#0A6CB5] hover:bg-[#D4E9F7] hover:text-[#064e83] transition cursor-pointer"
+                  aria-label={`Remove ${chip}`}
+                >
+                  <Icon name="close" size={13} />
+                </button>
+              </span>
+            ))}
+            <input
+              ref={inputRef}
+              value={draft}
+              autoComplete="off"
+              role="combobox"
+              aria-expanded={open}
+              aria-label={placeholder}
+              placeholder={chips.length > 0 ? (chips.length >= 3 ? '' : '+ Add more') : placeholder}
+              onFocus={() => {
+                show();
+                scrollToInput();
+              }}
+              onBlur={handleBlur}
+              onChange={handleInputChange}
+              onKeyDown={onKeyDown}
+              className="h-full min-w-[70px] flex-1 shrink-0 bg-transparent text-sm text-brand-dark outline-none placeholder:text-brand-gray-muted"
+            />
+          </div>
+          {(chips.length > 0 || draft) && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                clearAll();
+              }}
+              className="ml-1 shrink-0 rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-brand-dark transition cursor-pointer"
+              title="Clear all"
+            >
+              <Icon name="close" size={16} />
+            </button>
+          )}
+        </div>
+      ) : (
+        <input
+          value={value}
+          autoComplete="off"
+          role="combobox"
+          aria-expanded={open}
+          aria-label={placeholder}
+          placeholder={placeholder}
+          onFocus={show}
+          onClick={() => !open && show()}
+          onBlur={() => !phone && close()}
+          onChange={(e) => {
+            onChange(e.target.value);
+            setActive(-1);
+            setOpen(true);
+          }}
+          onKeyDown={onKeyDown}
+          className={inputClassName}
+        />
+      )}
+
       {!phone && (
         <Popover anchorRef={anchorRef} open={open && hasContent} onClose={close}>
           <div className="max-h-[360px] overflow-y-auto">{list}</div>
         </Popover>
       )}
+
       {phone &&
         open &&
         createPortal(
@@ -239,20 +478,68 @@ const JobSearchInput = ({ kind = 'job', value, onChange, onSearch, onEnter, anch
               className="flex items-center gap-2 border-b border-brand-border p-2"
               onSubmit={(e) => {
                 e.preventDefault();
-                e.stopPropagation(); // portals still bubble to the page's search form
-                pickTerm(value);
+                e.stopPropagation();
+                if (multi) {
+                  if (draft.trim()) addChip(draft);
+                  close();
+                  onSearch?.({ [source.field]: [...chips, draft.trim()].filter(Boolean).join(', ') });
+                } else {
+                  pickTerm(value);
+                }
               }}
             >
               <button type="button" onClick={close} aria-label="Close search" className="rounded-md p-2 text-brand-dark">
                 <Icon name="arrow_back" size={22} />
               </button>
-              <input ref={sheetInput} value={value} onChange={(e) => onChange(e.target.value)} onKeyDown={onKeyDown} autoComplete="off" enterKeyHint="search" aria-label={placeholder} placeholder={placeholder} className="h-11 min-w-0 flex-1 bg-transparent text-base text-brand-dark outline-none placeholder:text-brand-gray-muted" />
-              {value && (
-                <button type="button" onClick={() => onChange('')} aria-label="Clear search" className="rounded-md p-2 text-brand-gray-muted">
+              <input
+                ref={sheetInput}
+                value={multi ? draft : value}
+                onChange={handleInputChange}
+                onKeyDown={onKeyDown}
+                autoComplete="off"
+                enterKeyHint="search"
+                aria-label={placeholder}
+                placeholder={multi && chips.length > 0 ? 'Add another skill or role...' : placeholder}
+                className="h-11 min-w-0 flex-1 bg-transparent text-base text-brand-dark outline-none placeholder:text-brand-gray-muted"
+              />
+              {(multi ? draft || chips.length > 0 : value) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (multi) {
+                      setChips([]);
+                      setDraft('');
+                      emitChange([]);
+                    } else {
+                      onChange('');
+                    }
+                  }}
+                  aria-label="Clear search"
+                  className="rounded-md p-2 text-brand-gray-muted"
+                >
                   <Icon name="close" size={20} />
                 </button>
               )}
             </form>
+            {multi && chips.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 px-3 py-2 border-b border-brand-border bg-slate-50">
+                {chips.map((chip, idx) => (
+                  <span
+                    key={chip + idx}
+                    className="inline-flex items-center gap-1 rounded-lg bg-[#EBF5FB] border border-[#CBE5F7] px-2.5 py-1 text-xs font-semibold text-[#0A6CB5]"
+                  >
+                    <span>{chip}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeChip(idx)}
+                      className="rounded-full p-0.5 text-[#0A6CB5]"
+                    >
+                      <Icon name="close" size={14} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
             <div className="flex-1 overflow-y-auto">{list}</div>
           </div>,
           document.body,

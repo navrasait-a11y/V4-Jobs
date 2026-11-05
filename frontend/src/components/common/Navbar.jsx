@@ -117,36 +117,36 @@ const Navbar = () => {
   return (
     <>
       <header className={clsx('fixed left-0 right-0 top-0 z-50 border-b bg-white/95 backdrop-blur transition-shadow', scrolled ? 'border-brand-border shadow-[var(--shadow-card)]' : 'border-transparent')}>
-        <div className="mx-auto flex h-[70px] max-w-[1240px] items-center justify-between gap-2 px-3 sm:gap-4 sm:px-6">
+        <div className="flex h-[70px] w-full items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
           <div className="flex min-w-0 items-center gap-2 sm:gap-4">
             <button className="-ml-1 rounded-lg p-1 text-brand-dark lg:hidden" onClick={() => setDrawerOpen(true)} aria-label="Open menu">
               <Icon name="menu" size={26} />
             </button>
-            <Logo height={26} />
-            <nav className="ml-2 hidden items-center lg:flex" aria-label="Main">
+            <Logo height={34} />
+            <nav className="ml-3 hidden items-center lg:flex" aria-label="Main">
               <JobsMenu />
               <Menu label="Companies" to="/companies" items={companiesMenu} />
               <Menu label="Services" to="/career-advice" items={servicesMenu} />
             </nav>
           </div>
 
-          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
             {user ? (
-              <Link to={dashboardPath(user.role)} className="flex items-center gap-2 rounded-md border border-brand-border p-1 min-[380px]:pr-3 transition-colors hover:border-brand-blue">
-                <Avatar name={user.fullName} src={user.avatar?.url} size={32} />
+              <Link to={dashboardPath(user.role)} className="flex items-center gap-2 rounded-lg border border-brand-border bg-white p-1 min-[380px]:px-3 min-[380px]:py-1.5 transition-colors hover:border-brand-blue shadow-2xs">
+                <Avatar name={user.fullName} src={user.avatar?.url} size={30} />
                 <span className="hidden whitespace-nowrap text-sm font-semibold text-brand-dark min-[380px]:inline">Dashboard</span>
               </Link>
             ) : (
               <>
-                <Link to="/login" className="hidden whitespace-nowrap rounded-md border border-brand-blue px-3 py-1.5 text-sm font-semibold text-brand-blue transition-colors hover:bg-brand-blue-tint min-[380px]:inline-flex sm:px-4 sm:py-2">
+                <Link to="/login" className="hidden whitespace-nowrap rounded-lg border border-brand-blue px-3.5 py-1.5 text-sm font-semibold text-brand-blue transition-colors hover:bg-brand-blue-tint min-[380px]:inline-flex">
                   Login
                 </Link>
-                <Link to="/register" className="whitespace-nowrap rounded-md bg-brand-orange px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:bg-brand-orange-dark sm:px-4 sm:py-2">
+                <Link to="/register" className="whitespace-nowrap rounded-lg bg-brand-orange px-3.5 py-1.5 text-sm font-semibold text-white shadow-2xs transition-colors hover:bg-brand-orange-dark">
                   Register
                 </Link>
               </>
             )}
-            <div className="ml-1 hidden border-l border-brand-border pl-2 lg:block">
+            <div className="ml-1 hidden border-l border-brand-border pl-3 lg:block">
               <Menu label="For employers" to="/for-employers" items={employersMenu} align="right" />
             </div>
           </div>

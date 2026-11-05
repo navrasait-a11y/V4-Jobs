@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import JobCard from '../../components/common/JobCard';
 import Button from '../../components/ui/Button';
 import { ProgressBar, Section, StatTile, StatusBadge } from '../../components/ui/data';
-import { CardSkeleton, EmptyState, ErrorState } from '../../components/ui/feedback';
+import { CardSkeleton, EmptyState, ErrorState, Icon } from '../../components/ui/feedback';
 import useAuth from '../../hooks/useAuth';
 import { useCandidateProfile, useDocumentTitle } from '../../hooks/useData';
 import { candidateApi, jobApi } from '../../services';
@@ -31,6 +31,35 @@ const Dashboard = () => {
         <StatTile loading={dash.isPending} icon="event_upcoming" tone="green" label="Interviews" value={stages.interview_scheduled} to="/candidate/interviews" />
         <StatTile loading={dash.isPending} icon="mail" tone="orange" label="Pending invites" value={c.pendingInvites} to="/candidate/job-invites" />
         <StatTile loading={dash.isPending} icon="bookmark" tone="purple" label="Saved jobs" value={c.saved} to="/candidate/saved-jobs" />
+      </div>
+
+      {/* Naukri-style Resume Builder Highlight */}
+      <div className="mt-5 overflow-hidden rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50/90 via-indigo-50/70 to-white p-4 shadow-sm transition hover:shadow-md sm:p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3.5">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-brand-blue text-white shadow-sm ring-4 ring-blue-100">
+              <Icon name="article" size={24} />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-base font-bold text-brand-dark">ATS-Friendly Resume Builder</h3>
+                <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-bold tracking-wide text-brand-blue uppercase">
+                  3x More Recruiter Views
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-brand-gray sm:text-sm">
+                Build and customize an eye-catching, recruiter-tested resume in minutes with live templates, auto profile sync, and instant PDF download.
+              </p>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button asChild size="sm" variant="primaryBlue" className="shadow-sm">
+              <Link to="/candidate/resume-builder" className="flex items-center gap-1.5 font-semibold">
+                <Icon name="edit_document" size={16} /> Open Resume Builder
+              </Link>
+            </Button>
+          </div>
+        </div>
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -71,9 +100,14 @@ const Dashboard = () => {
                   ))}
                 </ul>
               )}
-              <Button asChild size="sm" variant="outline" className="mt-3">
-                <Link to="/candidate/complete-profile">Update profile</Link>
-              </Button>
+              <div className="mt-3 flex items-center justify-between border-t border-brand-border/60 pt-3">
+                <Button asChild size="sm" variant="outline">
+                  <Link to="/candidate/complete-profile">Update profile</Link>
+                </Button>
+                <Link to="/candidate/resume-builder" className="text-xs font-semibold text-brand-blue hover:underline">
+                  Build Resume →
+                </Link>
+              </div>
             </Section>
           )}
           <Section title="Recent applications">

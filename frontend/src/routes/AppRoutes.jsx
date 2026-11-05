@@ -70,7 +70,7 @@ const JobAlerts = named(lists, 'JobAlerts');
 const CandidateSettings = lazy(() => import('../pages/candidate/Settings'));
 const CandidateBilling = named(grow, 'CandidateBilling');
 const CandidateAnalytics = named(grow, 'CandidateAnalytics');
-const ResumeBuilder = named(grow, 'ResumeBuilder');
+const ResumeBuilder = lazy(() => import('../pages/candidate/ResumeBuilder'));
 
 const empApps = () => import('../pages/employer/Applications');
 const empCandidates = () => import('../pages/employer/Candidates');

@@ -118,19 +118,31 @@ const CompanyDetails = () => {
   if (query.isError) return <div className="mx-auto max-w-[800px] p-6"><ErrorState error={query.error} onRetry={query.refetch} /></div>;
 
   return (
-    <div className="bg-brand-tint">
-      <div className="h-32 bg-brand-ink sm:h-44">{org.cover?.url && <img src={org.cover.url} alt="" className="h-full w-full object-cover" />}</div>
-      <div className="mx-auto max-w-[1200px] px-4 pb-10 sm:px-6">
-        <div className="-mt-10 surface p-5 sm:p-6">
+    <div className="min-h-screen bg-brand-tint">
+      <div className="relative h-36 w-full overflow-hidden border-b border-brand-border/80 bg-gradient-to-r from-[#EAF3FA] via-[#F2F6FB] to-[#FEF3E8] sm:h-48">
+        {org.cover?.url ? (
+          <img src={org.cover.url} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <div className="pointer-events-none absolute inset-0 overflow-hidden">
+            <div className="absolute -right-10 -top-10 h-56 w-56 rounded-full bg-brand-blue/10 blur-3xl" />
+            <div className="absolute -bottom-10 left-1/4 h-52 w-52 rounded-full bg-brand-orange/10 blur-3xl" />
+            <div className="absolute inset-0 opacity-[0.035] [background-image:radial-gradient(#0A6CB5_1px,transparent_1px)] [background-size:16px_16px]" />
+          </div>
+        )}
+      </div>
+      <div className="relative z-10 mx-auto max-w-[1200px] px-4 pb-10 sm:px-6">
+        <div className="-mt-12 surface rounded-2xl p-5 shadow-[0_4px_20px_-4px_rgba(11,18,32,0.08)] sm:-mt-16 sm:p-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-            <CompanyLogo name={org.name} src={org.logo?.url} size={72} />
+            <div className="shrink-0 rounded-xl border border-brand-border bg-white p-1 shadow-2xs">
+              <CompanyLogo name={org.name} src={org.logo?.url} size={72} />
+            </div>
             <div className="min-w-0 flex-1">
               <h1 className="flex flex-wrap items-center gap-1.5 text-xl font-bold text-brand-dark sm:text-2xl">
                 {org.name}
                 {org.isVerified && <Icon name="verified" size={20} fill className="text-brand-green" />}
               </h1>
               <p className="mt-0.5 text-sm text-brand-gray">{[org.industries?.[0], org.organizationType, titleCase(org.type || '')].filter(Boolean).join(' · ')}</p>
-              <div className="mt-2 flex flex-wrap gap-2">
+              <div className="mt-2.5 flex flex-wrap gap-2">
                 {org.labels?.map((l) => (
                   <Badge key={l} tone="orange">
                     {titleCase(l)}

@@ -172,28 +172,89 @@ export async function uploadAvatar(req, file) {
 }
 
 export async function saveResumeBuilder(userId, data) {
-  await Candidate.updateOne({ user: userId }, { $set: { resumeBuilder: { ...data, updatedAt: new Date() } } });
+  await Candidate.updateOne(
+    { user: userId },
+    { $set: { resumeBuilder: { ...data, updatedAt: new Date() } } },
+    { upsert: true },
+  );
   return data;
 }
 
 export async function getResumeBuilder(userId) {
   const [user, profile] = await Promise.all([User.findById(userId).lean(), Candidate.findOne({ user: userId }).lean()]);
-  // Pre-fill the builder from the profile when nothing was saved yet.
-  return (
-    profile?.resumeBuilder || {
-      personal: { fullName: user.fullName, email: user.email, mobile: user.mobile, location: profile?.currentLocation },
-      headline: profile?.resumeHeadline,
-      summary: profile?.profileSummary,
-      skills: profile?.keySkills,
-      itSkills: profile?.itSkills,
-      employments: profile?.employments,
-      educations: profile?.educations,
-      certifications: profile?.certifications,
-      languages: profile?.languages,
-      portfolios: profile?.portfolios,
-      template: 'classic',
+  if (!user) throw ApiError.notFound('User not found');
+
+  const formatLoc = (loc) => {
+    if (!loc) return '';
+    if (typeof loc === 'string') return loc;
+    return [loc.city, loc.state].filter(Boolean).join(', ') || loc.city || loc.district || loc.state || '';
+  };
+
+  // If already saved resume builder data exists, sanitize and return
+  if (profile?.resumeBuilder) {
+    const rb = { ...profile.resumeBuilder };
+    if (rb.personal) {
+      rb.personal = {
+        ...rb.personal,
+        fullName: rb.personal.fullName || user.fullName || '',
+        email: rb.personal.email || user.email || '',
+        mobile: rb.personal.mobile || user.mobile || '',
+        location: formatLoc(rb.personal.location),
+      };
     }
-  );
+    return rb;
+  }
+
+  // Pre-fill the builder from the profile when nothing was saved yet.
+  const locationStr = formatLoc(profile?.currentLocation);
+  const allSkills = Array.from(new Set([...(profile?.keySkills || []), ...(profile?.itSkills || [])])).filter(Boolean);
+
+  return {
+    template: 'modern',
+    personal: {
+      fullName: user.fullName || '',
+      email: user.email || '',
+      mobile: user.mobile || '',
+      location: locationStr,
+      headline: profile?.resumeHeadline || '',
+      website: '',
+      linkedin: profile?.socialProfiles?.find((s) => /linkedin/i.test(s.platform || s.url))?.url || '',
+      github: profile?.socialProfiles?.find((s) => /github/i.test(s.platform || s.url))?.url || '',
+    },
+    headline: profile?.resumeHeadline || '',
+    summary: profile?.profileSummary || '',
+    skills: allSkills,
+    languages: profile?.languages || [],
+    certifications: profile?.certifications || [],
+    experiences: (profile?.employments || []).map((e) => ({
+      id: String(e._id || Math.random().toString(36).slice(2, 9)),
+      jobTitle: e.jobTitle || '',
+      company: e.employerName || '',
+      location: formatLoc(e.location),
+      startDate: e.startDate ? new Date(e.startDate).toISOString().slice(0, 7) : '',
+      endDate: e.endDate ? new Date(e.endDate).toISOString().slice(0, 7) : '',
+      current: Boolean(e.isCurrent),
+      description: e.description || '',
+    })),
+    educations: (profile?.educations || []).map((e) => ({
+      id: String(e._id || Math.random().toString(36).slice(2, 9)),
+      degree: [e.degree, e.specialisation].filter(Boolean).join(' - ') || e.level || '',
+      institution: e.institution || '',
+      startDate: e.startDate ? new Date(e.startDate).toISOString().slice(0, 7) : '',
+      endDate: e.endDate ? new Date(e.endDate).toISOString().slice(0, 7) : '',
+      current: Boolean(e.status === 'Pursuing'),
+      grade: e.marks || '',
+      description: '',
+    })),
+    projects: (profile?.portfolios || []).map((p) => ({
+      id: String(Math.random().toString(36).slice(2, 9)),
+      name: p.name || '',
+      url: p.url || '',
+      tech: '',
+      description: '',
+    })),
+    achievements: [],
+  };
 }
 
 export async function dashboard(userId) {
