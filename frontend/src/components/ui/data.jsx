@@ -90,17 +90,38 @@ export const Tabs = ({ tabs, value, onChange, className = '' }) => (
   </div>
 );
 
-export const Pagination = ({ meta, onPage }) => {
-  if (!meta || (meta.totalPages || 0) <= 1) return null;
-  const { page, totalPages, total } = meta;
+export const PAGE_SIZES = [10, 20, 30, 40, 60, 80, 100, 150, 200];
+
+/** Page links plus, with `onLimit`, the PRD "No of items show 10 … 200" selector. */
+export const Pagination = ({ meta, onPage, limit, onLimit }) => {
+  if (!meta) return null;
+  const totalPages = meta.totalPages || 0;
+  if (totalPages <= 1 && !(onLimit && (meta.total || 0) > PAGE_SIZES[0])) return null;
+  const { page, total } = meta;
   const pages = [];
   for (let p = Math.max(1, page - 2); p <= Math.min(totalPages, page + 2); p += 1) pages.push(p);
   const btn = 'flex h-9 min-w-9 items-center justify-center rounded-md border px-2 text-sm font-medium transition-colors disabled:opacity-40';
   return (
     <nav className="mt-4 flex flex-wrap items-center justify-between gap-3" aria-label="Pagination">
-      <p className="text-xs text-brand-gray-muted">
-        Page {page} of {totalPages} · {total?.toLocaleString('en-IN')} results
-      </p>
+      <div className="flex flex-wrap items-center gap-3">
+        <p className="text-xs text-brand-gray-muted">
+          Page {page} of {Math.max(totalPages, 1)} · {total?.toLocaleString('en-IN')} results
+        </p>
+        {onLimit && (
+          <label className="flex items-center gap-1.5 text-xs text-brand-gray-muted">
+            Show
+            <Select
+              ariaLabel="Results per page"
+              value={String(limit || meta.limit || 20)}
+              onChange={(v) => onLimit(Number(v))}
+              options={PAGE_SIZES.map((n) => ({ value: String(n), label: String(n) }))}
+              placeholder={null}
+              className="w-20"
+              buttonClassName="field-control flex h-8 w-full items-center justify-between gap-1 px-2 text-left text-xs"
+            />
+          </label>
+        )}
+      </div>
       <div className="flex gap-1.5">
         <button className={clsx(btn, 'border-brand-border bg-white text-brand-gray hover:border-brand-blue')} disabled={page <= 1} onClick={() => onPage(page - 1)} aria-label="Previous page">
           <Icon name="chevron_left" size={18} />
@@ -152,7 +173,13 @@ export const DataTable = ({ columns, rows, query, rowKey = (r) => r._id, empty, 
           </thead>
           <tbody className="divide-y divide-brand-border">
             {rows.map((row) => (
-              <tr key={rowKey(row)} onClick={onRowClick ? () => onRowClick(row) : undefined} className={clsx('transition-colors hover:bg-brand-tint/60', onRowClick && 'cursor-pointer')}>
+              <tr
+                key={rowKey(row)}
+                onClick={onRowClick ? () => onRowClick(row) : undefined}
+                onKeyDown={onRowClick ? (e) => e.key === 'Enter' && e.target === e.currentTarget && onRowClick(row) : undefined}
+                tabIndex={onRowClick ? 0 : undefined}
+                className={clsx('transition-colors hover:bg-brand-tint/60 focus-visible:bg-brand-blue-tint focus-visible:outline-none', onRowClick && 'cursor-pointer')}
+              >
                 {selectable && (
                   <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                     <input type="checkbox" aria-label="Select row" checked={selected.includes(rowKey(row))} onChange={() => toggle(rowKey(row))}  />

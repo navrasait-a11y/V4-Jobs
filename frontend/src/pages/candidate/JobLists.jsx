@@ -6,7 +6,7 @@ import JobCard from '../../components/common/JobCard';
 import Button from '../../components/ui/Button';
 import { PageHeader, Pagination, StatusBadge, Tabs } from '../../components/ui/data';
 import { AlertCriteriaFields, criteriaError, criteriaForm, FREQUENCIES, toCriteria } from '../../components/candidate/JobAlertFields';
-import { Alert, CardSkeleton, ConfirmDialog, EmptyState, ErrorState, Modal } from '../../components/ui/feedback';
+import { Alert, CardSkeleton, ConfirmDialog, EmptyState, ErrorState, Icon, Modal } from '../../components/ui/feedback';
 import { SelectField, TextField } from '../../components/ui/form';
 import { useAction, useCandidateProfile, useDocumentTitle, useUrlFilters } from '../../hooks/useData';
 import { alertApi, employerPublicApi, interviewApi, inviteApi, jobApi } from '../../services';
@@ -19,6 +19,31 @@ const Loading = ({ query, emptyProps, children }) => {
   return children;
 };
 
+/** PRD "Save Job Search": searches saved from the job search page, re-run with one click. */
+const SavedJobSearches = () => {
+  const query = useQuery({ queryKey: ['job-searches'], queryFn: jobApi.searches });
+  const remove = useAction(jobApi.removeSearch, { success: 'Search removed', invalidate: ['job-searches'] });
+  const rows = query.data || [];
+  if (!rows.length) return null;
+  return (
+    <section className="mb-6">
+      <h2 className="mb-2 text-sm font-bold text-brand-dark">Saved searches</h2>
+      <div className="flex flex-wrap gap-2">
+        {rows.map((s) => (
+          <span key={s._id} className="inline-flex items-center gap-1 rounded-full border border-brand-border bg-white py-1 pl-3 pr-1 text-sm">
+            <Link to={`/jobs?${s.filters?.query || ''}`} className="font-medium text-brand-blue hover:underline">
+              {s.name}
+            </Link>
+            <button type="button" aria-label={`Remove ${s.name}`} onClick={() => remove.mutate(s._id)} className="rounded-full p-1 text-brand-gray-muted hover:bg-brand-tint hover:text-brand-red">
+              <Icon name="close" size={14} />
+            </button>
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+};
+
 export const SavedJobs = () => {
   useDocumentTitle('Saved jobs');
   const [filters, setFilters] = useUrlFilters({ page: '1' });
@@ -27,6 +52,7 @@ export const SavedJobs = () => {
   return (
     <div>
       <PageHeader title="Saved Jobs" />
+      <SavedJobSearches />
       <Loading
         query={query}
         emptyProps={{
@@ -47,7 +73,7 @@ export const SavedJobs = () => {
           })}
         </div>
       </Loading>
-      <Pagination meta={query.data?.meta} onPage={(page) => setFilters({ page })} />
+      <Pagination meta={query.data?.meta} onPage={(page) => setFilters({ page })} limit={filters.limit} onLimit={(limit) => setFilters({ limit })} />
     </div>
   );
 };
@@ -112,7 +138,7 @@ export const JobInvites = () => {
           ))}
         </div>
       </Loading>
-      <Pagination meta={query.data?.meta} onPage={(page) => setFilters({ page })} />
+      <Pagination meta={query.data?.meta} onPage={(page) => setFilters({ page })} limit={filters.limit} onLimit={(limit) => setFilters({ limit })} />
     </div>
   );
 };

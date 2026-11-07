@@ -31,6 +31,10 @@ const USER_BULK = [
   { action: 'suspend', label: 'Suspend', danger: true },
   { action: 'trash', label: 'Trash', danger: true },
 ];
+// PRD labels: Label Candidate / Employer Label / Label Job; situation tags come from master data.
+const CANDIDATE_PICKERS = [{ action: 'label_add', label: 'Add label', options: opt(['premium', 'starred', 'featured', 'actively_searching', 'urgent', 'profile_booster']) }, { action: 'label_remove', label: 'Remove label', options: opt(['premium', 'starred', 'featured', 'actively_searching', 'urgent', 'profile_booster']) }, { action: 'tag', label: 'Set situation tag', lookup: 'situation_tag' }];
+const EMPLOYER_PICKERS = [{ action: 'label_add', label: 'Add label', options: opt(['premium', 'starred', 'featured', 'actively_hiring', 'urgent_hiring']) }, { action: 'label_remove', label: 'Remove label', options: opt(['premium', 'starred', 'featured', 'actively_hiring', 'urgent_hiring']) }, { action: 'tag', label: 'Set situation tag', lookup: 'situation_tag' }];
+const JOB_PICKERS = [{ action: 'label_add', label: 'Add label', options: opt(['premium', 'starred', 'featured', 'actively_hiring', 'urgent']) }, { action: 'label_remove', label: 'Remove label', options: opt(['premium', 'starred', 'featured', 'actively_hiring', 'urgent']) }];
 const USER_STATUS = opt(['active', 'pending', 'admin_review', 'blocked', 'suspended', 'trashed']);
 
 const impersonate = async (id) => {
@@ -152,46 +156,39 @@ const couponFields = [
   { key: 'perUserLimit', label: 'Per user limit', type: 'number' },
   { key: 'isActive', label: 'Active', type: 'checkbox', default: true },
 ];
-const pageFields = [
-  { key: 'slug', label: 'Slug', required: true },
-  { key: 'title', label: 'Title', required: true },
-  { key: 'content', label: 'Content (HTML)', type: 'html', required: true },
-  { key: 'status', label: 'Status', type: 'select', options: opt(['draft', 'published']) },
-];
-const blogFields = [
-  { key: 'title', label: 'Title', required: true },
-  { key: 'excerpt', label: 'Excerpt', type: 'textarea' },
-  { key: 'content', label: 'Content (HTML)', type: 'html', required: true },
-  { key: 'category', label: 'Category' },
-  { key: 'tags', label: 'Tags', type: 'list' },
-  { key: 'status', label: 'Status', type: 'select', options: opt(['draft', 'published']) },
-  { key: 'isFeatured', label: 'Featured', type: 'checkbox' },
-];
 const faqFields = [
   { key: 'question', label: 'Question', required: true },
-  { key: 'answer', label: 'Answer', type: 'textarea', required: true },
-  { key: 'category', label: 'Category' },
-  { key: 'audience', label: 'Audience', type: 'select', options: opt(['candidate', 'employer']) },
+  { key: 'answer', label: 'Answer', type: 'html', rows: 8, required: true, placeholder: 'Write the answer…' },
+  { key: 'category', label: 'Category', type: 'lookup', lookup: 'faq_category' },
+  { key: 'audience', label: 'Audience', type: 'select', options: opt(['all', 'candidate', 'employer']) },
   { key: 'order', label: 'Order', type: 'number' },
   { key: 'isActive', label: 'Active', type: 'checkbox', default: true },
 ];
 const adFields = [
   { key: 'name', label: 'Name', required: true },
-  { key: 'placement', label: 'Placement', required: true, hint: 'For example home_top or jobs_list' },
   { key: 'type', label: 'Type', type: 'select', required: true, options: opt(['banner', 'adsense', 'admob', 'html']) },
-  { key: 'image.url', label: 'Image URL', inputType: 'url' },
-  { key: 'link', label: 'Link', inputType: 'url' },
-  { key: 'adUnitId', label: 'Ad unit id' },
-  { key: 'priority', label: 'Priority', type: 'number' },
+  { key: 'placement', label: 'Placement', type: 'select', required: true, options: opt(['home_top', 'home_middle', 'jobs_list', 'job_detail_sidebar', 'company_page', 'dashboard', 'career_advice']) },
+  { key: 'platforms', label: 'Show on', type: 'multi', options: opt(['web', 'android', 'ios']), default: ['web', 'android', 'ios'] },
+  { key: 'audience', label: 'Audience', type: 'select', options: opt(['all', 'guest', 'candidate', 'employer']) },
+  { type: 'heading', label: 'Creative' },
+  { key: 'image', label: 'Banner image (desktop)', type: 'media' },
+  { key: 'mobileImage', label: 'Banner image (mobile)', type: 'media' },
+  { key: 'link', label: 'Click-through link', inputType: 'url' },
+  { key: 'adUnitId', label: 'AdSense / AdMob ad unit id', hint: 'For AdSense and AdMob types' },
+  { key: 'html', label: 'Custom content', type: 'html', rows: 6, hint: 'For the HTML type only' },
+  { type: 'heading', label: 'Schedule' },
+  { key: 'priority', label: 'Priority', type: 'number', hint: 'Higher shows first' },
   { key: 'startAt', label: 'Starts', type: 'datetime' },
   { key: 'endAt', label: 'Ends', type: 'datetime' },
   { key: 'isActive', label: 'Active', type: 'checkbox', default: true },
 ];
 const templateFields = [
   { key: 'name', label: 'Name', required: true },
-  { key: 'subject', label: 'Subject', required: true },
-  { key: 'html', label: 'HTML', type: 'html', required: true },
-  { key: 'category', label: 'Category' },
+  { key: 'subject', label: 'Subject', required: true, hint: 'Variables like {{name}} work here too' },
+  { key: 'html', label: 'E-mail body', type: 'html', required: true, full: true, rows: 14, variables: ['name', 'email', 'jobTitle', 'company', 'url', 'date'], hint: 'Click a variable to insert it. It is replaced for each recipient.' },
+  { key: 'variables', label: 'Variables used', type: 'list', hint: 'For example name, jobTitle - written as {{name}} in the text' },
+  { key: 'category', label: 'Category', type: 'select', options: opt(['general', 'candidate', 'employer', 'marketing', 'transactional']) },
+  { key: 'isActive', label: 'Active', type: 'checkbox', default: true },
 ];
 const locationFields = [
   { key: 'locality', label: 'Locality' },
@@ -200,23 +197,31 @@ const locationFields = [
   { key: 'state', label: 'State', required: true },
   { key: 'country', label: 'Country', default: 'India' },
   { key: 'pincode', label: 'Pincode' },
-  { key: 'isPopular', label: 'Popular', type: 'checkbox' },
+  { key: 'geo.lat', label: 'Latitude', type: 'number', hint: 'Used for the "within N km" filters' },
+  { key: 'geo.lng', label: 'Longitude', type: 'number' },
+  { key: 'isPopular', label: 'Popular (shown first)', type: 'checkbox' },
+  { key: 'isActive', label: 'Active', type: 'checkbox', default: true },
 ];
+const ADMIN_PERMISSION_OPTIONS = ['dashboard.view', 'users.manage', 'users.impersonate', 'employers.manage', 'candidates.manage', 'jobs.manage', 'applications.manage', 'documents.verify', 'comments.moderate', 'reports.manage', 'chat.manage', 'payments.manage', 'plans.manage', 'cms.manage', 'ads.manage', 'masterdata.manage', 'notifications.send', 'leads.manage', 'settings.manage', 'audit.view', 'admins.manage'].map((value) => ({ value, label: titleCase(value.replace('.', ' ')) }));
 const adminFields = [
   { key: 'fullName', label: 'Full name', required: true },
+  { key: 'nickname', label: 'Display name (shown on blogs)' },
+  { key: 'designation', label: 'Designation' },
   { key: 'email', label: 'Email', inputType: 'email', required: true },
-  { key: 'password', label: 'Password', inputType: 'password', required: true },
+  { key: 'mobile', label: 'Mobile' },
+  { key: 'password', label: 'Password', inputType: 'password', required: true, hint: 'At least 8 characters with a letter and a number' },
   { key: 'role', label: 'Role', type: 'select', options: opt(['admin', 'super_admin']) },
-  { key: 'permissions', label: 'Permissions', type: 'list', hint: 'Comma separated keys. Empty means full access.' },
+  { key: 'permissions', label: 'Permissions (none selected = full access)', type: 'multi', options: ADMIN_PERMISSION_OPTIONS },
 ];
 
 export const MODULES = {
   candidates: {
     title: 'Candidates',
     path: '/candidates',
+    rowLink: (r) => `/admin/candidates/${r._id}`,
     columns: [person, two('job', 'Current', (r) => r.profile?.currentJobTitle || r.currentJobTitle, (r) => r.uid), { key: 'source', header: 'Source', render: (r) => titleCase(r.source || '') }, status(), date()],
     filters: [{ key: 'status', label: 'Status', options: USER_STATUS }, { key: 'source', label: 'Source', options: opt(['direct', 'excel_import', 'job_apply', 'event_apply', 'job_alert', 'admin', 'google']) }, { key: 'hasResume', label: 'Resume', options: [{ value: 'true', label: 'Has resume' }] }],
-    bulk: { path: '/candidates/bulk', actions: USER_BULK },
+    bulk: { path: '/candidates/bulk', actions: USER_BULK, pickers: CANDIDATE_PICKERS },
     editFields: [
       { key: 'user.fullName', from: 'fullName', label: 'Full name' },
       { key: 'user.email', from: 'email', label: 'Email', inputType: 'email' },
@@ -225,7 +230,16 @@ export const MODULES = {
     ],
     exportPath: '/candidates/export',
     importPath: '/candidates/import',
-    createFields: [{ key: 'fullName', label: 'Full name', required: true }, { key: 'email', label: 'Email', inputType: 'email', required: true }, { key: 'mobile', label: 'Mobile', required: true }],
+    importModes: true,
+    createFields: [
+      { key: 'fullName', label: 'Full name', required: true },
+      { key: 'email', label: 'Email', inputType: 'email', required: true },
+      { key: 'mobile', label: 'Mobile (10 digits)', required: true },
+      { key: 'gender', label: 'Gender', type: 'lookup', lookup: 'gender' },
+      { key: 'experienceLevel', label: 'Experience level', type: 'lookup', lookup: 'experience_level' },
+      { key: 'password', label: 'Password', inputType: 'password', hint: 'Leave empty to e-mail a set-password link instead' },
+      { key: 'sendActivation', label: 'E-mail an activation link', type: 'checkbox', default: true },
+    ],
     rowActions: (r) => (
       <>
         <Open to={`/admin/candidates/${r._id}`}>View</Open>
@@ -236,9 +250,10 @@ export const MODULES = {
   employers: {
     title: 'Employers',
     path: '/employers',
+    rowLink: (r) => `/admin/employers/${r._id}`,
     columns: [two('name', 'Employer', (r) => r.name, (r) => r.uid), { key: 'type', header: 'Type', render: (r) => titleCase(r.type || '') }, { key: 'kyc', header: 'KYC', render: (r) => <StatusBadge status={r.kycStatus} /> }, status(), date()],
     filters: [{ key: 'type', label: 'Type', options: opt(['company', 'consultancy']) }, { key: 'status', label: 'Status', options: USER_STATUS }, { key: 'kycStatus', label: 'KYC', options: opt(['not_submitted', 'under_review', 'verified', 'rejected', 'resubmission_required']) }],
-    bulk: { path: '/employers/bulk', actions: USER_BULK },
+    bulk: { path: '/employers/bulk', actions: USER_BULK, pickers: EMPLOYER_PICKERS },
     editFields: [
       { key: 'name', label: 'Name' },
       { key: 'website', label: 'Website', inputType: 'url' },
@@ -248,15 +263,31 @@ export const MODULES = {
     ],
     exportPath: '/employers/export',
     importPath: '/employers/import',
-    createFields: [{ key: 'employerType', label: 'Type', type: 'select', required: true, options: opt(['company', 'consultancy']) }, { key: 'organizationName', label: 'Organization', required: true }, { key: 'fullName', label: 'Owner name', required: true }, { key: 'email', label: 'Email', inputType: 'email', required: true }, { key: 'mobile', label: 'Mobile', required: true }, { key: 'sendActivation', label: 'Send activation e-mail', type: 'checkbox', default: true }],
+    createFields: [
+      { key: 'employerType', label: 'Employer', type: 'select', required: true, options: opt(['company', 'consultancy']) },
+      { key: 'organizationName', label: 'Company / consultancy name', required: true },
+      { key: 'website', label: 'Website', inputType: 'url' },
+      { key: 'fullName', label: 'Owner full name', required: true },
+      { key: 'email', label: 'Owner e-mail', inputType: 'email', required: true },
+      { key: 'mobile', label: 'Owner mobile (10 digits)', required: true },
+      { key: 'password', label: 'Password', inputType: 'password', hint: 'Leave empty to e-mail a set-password link instead' },
+      { key: 'status', label: 'Status', type: 'select', options: opt(['active', 'pending']), default: 'active' },
+      { key: 'sendActivation', label: 'E-mail an activation link', type: 'checkbox', default: true },
+    ],
     rowActions: (r) => <Open to={`/admin/employers/${r._id}`}>View</Open>,
   },
   jobs: {
     title: 'Jobs',
     path: '/jobs',
+    rowLink: (r) => `/admin/jobs/${r._id}/edit`,
     columns: [two('title', 'Job', (r) => r.title, (r) => r.orgSnapshot?.name), { key: 'location', header: 'Location', render: (r) => formatLocations(r) }, { key: 'kind', header: 'Kind', render: (r) => titleCase(r.kind) }, { key: 'apps', header: 'Applications', render: (r) => r.stats?.applications || 0 }, status(), date()],
     filters: [{ key: 'status', label: 'Status', options: opt(['draft', 'pending', 'admin_review', 'active', 'closed', 'expired', 'rejected', 'trashed']) }, { key: 'kind', label: 'Kind', options: opt(['job', 'internship']) }],
-    bulk: { path: '/jobs/bulk', actions: JOB_BULK },
+    bulk: { path: '/jobs/bulk', actions: JOB_BULK, pickers: JOB_PICKERS },
+    headerActions: (
+      <Button asChild size="sm" variant="primary">
+        <Link to="/admin/jobs/post">Post job / internship</Link>
+      </Button>
+    ),
     editFields: [
       { key: 'title', label: 'Title' },
       { key: 'status', label: 'Status', type: 'select', options: opt(['draft', 'pending', 'admin_review', 'active', 'closed', 'expired', 'rejected']) },
@@ -267,8 +298,9 @@ export const MODULES = {
     exportPath: '/jobs/export',
     rowActions: (r) => (
       <>
+        <Open to={`/admin/jobs/${r._id}/edit`}>Edit</Open>
         <Link to={`/jobs/${r.slug}`} target="_blank" className="px-2 text-xs font-semibold text-brand-blue">
-          View
+          Public page
         </Link>
         <WithModal label="Candidates" render={(close) => <JobCandidates job={r} onClose={close} />} />
       </>
@@ -276,12 +308,27 @@ export const MODULES = {
   },
   responses: {
     title: 'Applications',
+    subtitle: 'Every job and internship response across employers',
     path: '/responses',
     columns: [two('name', 'Candidate', (r) => r.snapshot?.fullName, (r) => r.snapshot?.email), { key: 'job', header: 'Job', render: (r) => r.job?.title }, { key: 'stage', header: 'Stage', render: (r) => <StatusBadge status={r.stage} /> }, date('createdAt', 'Applied')],
-    filters: [{ key: 'stage', label: 'Stage', options: opt(['applied', 'screened', 'interview_scheduled', 'offered', 'hired', 'rejected', 'withdrawn']) }, { key: 'view', label: 'View', options: opt(['new', 'pending', 'viewed']) }],
-    search: false,
+    rowLink: (r) => `/admin/candidates/${r.candidate?._id || r.candidate}`,
+    filters: [
+      { key: 'stage', label: 'Stage', options: opt(['applied', 'screened', 'interview_scheduled', 'offered', 'hired', 'rejected', 'withdrawn']) },
+      { key: 'view', label: 'Responses', options: [{ value: 'new', label: 'New responses' }, { value: 'pending', label: 'Action pending' }, { value: 'viewed', label: 'Viewed' }] },
+      { key: 'screeningStatus', label: 'Screening', options: [{ value: 'shortlisted', label: 'Shortlisted' }, { value: 'maybe_relevant', label: 'Maybe relevant' }, { value: 'maybe_shortlist', label: 'Maybe shortlist' }, { value: 'rejected', label: 'Rejected' }, { value: 'on_hold', label: 'On hold' }, { value: 'not_interested', label: 'Not interested' }] },
+      { key: 'category', label: 'Category', options: [{ value: 'job', label: 'Job vacancy' }, { value: 'internship', label: 'Internship' }, { value: 'invite', label: 'Invite response' }] },
+      { key: 'source', label: 'Source', options: opt(['direct', 'invite', 'job_alert', 'event', 'recommendation', 'admin']) },
+    ],
+    search: true,
+    editFields: [
+      { key: 'stage', label: 'Stage', type: 'select', options: opt(['applied', 'screened', 'interview_scheduled', 'offered', 'hired', 'rejected']) },
+      { key: 'screeningStatus', label: 'Screening status', type: 'select', options: opt(['shortlisted', 'maybe_shortlist', 'rejected', 'on_hold', 'consider_other_role', 'not_interested', 'future_requirement', 'maybe_relevant']) },
+      { key: 'callingStatus', label: 'Calling status', type: 'select', options: opt(['call_done', 'not_picked', 'not_reachable', 'switched_off', 'call_cut']) },
+      { key: 'comment', label: 'Add a comment', type: 'textarea', rows: 3 },
+    ],
     exportPath: '/responses/export',
   },
+
   'job-alerts': {
     title: 'Job Alerts',
     path: '/job-alerts',
@@ -365,8 +412,8 @@ export const MODULES = {
     exportPath: '/leads/export',
     editFields: [{ key: 'status', label: 'Status', type: 'select', options: opt(['new', 'contacted', 'qualified', 'converted', 'lost']) }, { key: 'note', label: 'Note', type: 'textarea' }],
   },
-  cms: { title: 'Pages', path: '/cms/pages', columns: [{ key: 'title', header: 'Title' }, { key: 'slug', header: 'Slug' }, status(), date('updatedAt', 'Updated')], createFields: pageFields, editFields: pageFields, remove: true },
-  'career-advice': { title: 'Blogs', path: '/cms/blogs', columns: [{ key: 'title', header: 'Title' }, { key: 'category', header: 'Category', render: (r) => r.category || '—' }, status(), date('publishedAt', 'Published')], createFields: blogFields, editFields: blogFields, remove: true },
+  cms: { title: 'Pages', path: '/cms/pages', columns: [{ key: 'title', header: 'Title' }, { key: 'slug', header: 'Slug' }, status(), date('updatedAt', 'Updated')], createLink: '/admin/cms/new', rowLink: (r) => `/admin/cms/${r._id}/edit`, remove: true },
+  'career-advice': { title: 'Blogs', path: '/cms/blogs', columns: [{ key: 'title', header: 'Title' }, { key: 'category', header: 'Category', render: (r) => r.category || '—' }, status(), date('publishedAt', 'Published')], createLink: '/admin/career-advice/new', rowLink: (r) => `/admin/career-advice/${r._id}/edit`, remove: true },
   faqs: { title: 'FAQs', path: '/cms/faqs', columns: [{ key: 'question', header: 'Question' }, { key: 'audience', header: 'Audience', render: (r) => titleCase(r.audience || 'all') }], createFields: faqFields, editFields: faqFields, remove: true },
   ads: { title: 'Ads', path: '/cms/ads', columns: [{ key: 'name', header: 'Name' }, { key: 'placement', header: 'Placement' }, { key: 'type', header: 'Type' }, { key: 'active', header: 'State', render: (r) => <Badge tone={r.isActive ? 'green' : 'gray'}>{r.isActive ? 'Active' : 'Inactive'}</Badge> }], createFields: adFields, editFields: adFields, remove: true },
   contacts: {
@@ -387,7 +434,7 @@ export const MODULES = {
     bulk: { path: '/users/bulk', actions: USER_BULK },
     rowActions: (r) => <LoginAs id={r._id} />,
   },
-  roles: { title: 'Admins', path: '/admins', search: false, timespan: false, columns: [person, { key: 'role', header: 'Role', render: (r) => titleCase(r.role) }, status(), date('lastLoginAt', 'Last login')], createFields: adminFields, editFields: [{ key: 'fullName', label: 'Full name' }, { key: 'role', label: 'Role', type: 'select', options: opt(['admin', 'super_admin']) }, { key: 'status', label: 'Status', type: 'select', options: opt(['active', 'suspended', 'blocked']) }, { key: 'admin.permissions', label: 'Permissions', type: 'list' }] },
+  roles: { title: 'Admins', path: '/admins', search: false, timespan: false, columns: [person, { key: 'role', header: 'Role', render: (r) => titleCase(r.role) }, status(), date('lastLoginAt', 'Last login')], createFields: adminFields, editFields: [{ key: 'fullName', label: 'Full name' }, { key: 'role', label: 'Role', type: 'select', options: opt(['admin', 'super_admin']) }, { key: 'status', label: 'Status', type: 'select', options: opt(['active', 'suspended', 'blocked']) }, { key: 'permissions', from: 'admin.permissions', label: 'Permissions (none selected = full access)', type: 'multi', options: ADMIN_PERMISSION_OPTIONS }, { key: 'password', label: 'New password', inputType: 'password', hint: 'Leave empty to keep the current password' }] },
   'login-audit': { title: 'Login Audit', path: '/login-attempts', columns: [{ key: 'identifier', header: 'Identifier', render: (r) => r.identifier || '—' }, { key: 'role', header: 'Role', render: (r) => titleCase(r.role || 'unknown') }, { key: 'success', header: 'Result', render: (r) => <Badge tone={r.success ? 'green' : 'red'}>{r.success ? 'Success' : 'Failed'}</Badge> }, { key: 'ip', header: 'IP', render: (r) => r.ip || '—' }, stamp()], filters: [{ key: 'success', label: 'Result', options: [{ value: 'true', label: 'Success' }, { value: 'false', label: 'Failed' }] }] },
   'message-logs': { title: 'E-mail Logs', path: '/email-logs', columns: [{ key: 'to', header: 'To', render: (r) => (Array.isArray(r.to) ? r.to.join(', ') : r.to) }, { key: 'subject', header: 'Subject', render: (r) => r.subject || r.template }, { key: 'category', header: 'Category', render: (r) => titleCase(r.category || '') }, status(), stamp()], filters: [{ key: 'status', label: 'Status', options: opt(['queued', 'sent', 'delivered', 'opened', 'bounced', 'failed']) }] },
   'sms-logs': { title: 'SMS & WhatsApp Logs', path: '/message-logs', columns: [{ key: 'channel', header: 'Channel', render: (r) => titleCase(r.channel) }, { key: 'to', header: 'To' }, { key: 'template', header: 'Template', render: (r) => r.template || '—' }, status(), stamp()], filters: [{ key: 'channel', label: 'Channel', options: opt(['sms', 'whatsapp', 'push', 'arattai']) }, { key: 'status', label: 'Status', options: opt(['queued', 'sent', 'failed']) }] },

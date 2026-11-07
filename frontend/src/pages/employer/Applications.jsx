@@ -168,6 +168,17 @@ export const Applications = () => {
       <div className="mb-4 flex flex-wrap gap-2">
         <SearchInput className="min-w-[220px] flex-1" value={q} onChange={setQ} placeholder="Name, email, mobile" />
         <SimpleSelect ariaLabel="Job" value={filters.job} onChange={(job) => setFilters({ job })} placeholder="All jobs" className="max-w-[220px]" options={(jobs.data?.data || []).map((j) => ({ value: j._id, label: j.title }))} />
+        <SimpleSelect
+          ariaLabel="Response category"
+          value={filters.category}
+          onChange={(category) => setFilters({ category })}
+          placeholder="All categories"
+          options={[
+            { value: 'job', label: 'Job vacancy' },
+            { value: 'internship', label: 'Internship' },
+            { value: 'invite', label: 'Invite response' },
+          ]}
+        />
         <SimpleSelect ariaLabel="Screening" value={filters.screeningStatus} onChange={(v) => setFilters({ screeningStatus: v })} placeholder="Screening" options={opts(SCREENING_LABELS)} />
         <SimpleSelect ariaLabel="View" value={filters.view} onChange={(view) => setFilters({ view })} placeholder="All responses" options={[{ value: 'new', label: 'New' }, { value: 'viewed', label: 'Viewed' }, { value: 'pending', label: 'Action pending' }]} />
         <SimpleSelect ariaLabel="Time" value={filters.timespan} onChange={(timespan) => setFilters({ timespan })} placeholder="Any time" options={TIMESPAN_OPTIONS} />
@@ -183,7 +194,7 @@ export const Applications = () => {
         </div>
       )}
       <DataTable columns={columns} rows={query.data?.data} query={query} selectable selected={selected} onSelect={setSelected} onRowClick={(a) => navigate(`/employer/applications/${a._id}`)} empty={<EmptyState icon="group" title="No applications match" />} />
-      <Pagination meta={query.data?.meta} onPage={(page) => setFilters({ page })} />
+      <Pagination meta={query.data?.meta} onPage={(page) => setFilters({ page })} limit={filters.limit} onLimit={(limit) => setFilters({ limit })} />
     </div>
   );
 };
@@ -425,7 +436,7 @@ export const Interviews = () => {
           )
         }
       />
-      <Pagination meta={query.data?.meta} onPage={(page) => setFilters({ page })} />
+      <Pagination meta={query.data?.meta} onPage={(page) => setFilters({ page })} limit={filters.limit} onLimit={(limit) => setFilters({ limit })} />
       {editing && <InterviewModal interview={editing} onClose={() => setEditing(null)} />}
     </div>
   );

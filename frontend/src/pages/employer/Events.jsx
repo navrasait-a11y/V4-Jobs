@@ -152,7 +152,7 @@ const Events = () => {
           </span>
         )}
       />
-      <Pagination meta={query.data?.meta} onPage={(page) => setFilters({ page })} />
+      <Pagination meta={query.data?.meta} onPage={(page) => setFilters({ page })} limit={filters.limit} onLimit={(limit) => setFilters({ limit })} />
       {editing && <EventForm event={editing._id ? editing : null} onClose={() => setEditing(null)} />}
       {viewing && <ApplicantsDrawer event={viewing} onClose={() => setViewing(null)} />}
       {qr && <QrModal event={qr} onClose={() => setQr(null)} />}

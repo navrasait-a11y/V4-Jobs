@@ -1,17 +1,43 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import Button from '../../components/ui/Button';
-import { PageHeader, Section, StatTile, Tabs } from '../../components/ui/data';
+import { PageHeader, Section, SimpleSelect, StatTile, Tabs } from '../../components/ui/data';
 import { CardSkeleton, Drawer, EmptyState, ErrorState, Icon, Modal } from '../../components/ui/feedback';
 import { TextField } from '../../components/ui/form';
 import { useAction, useDocumentTitle } from '../../hooks/useData';
 import { talentApi } from '../../services';
 import { timeAgo, titleCase } from '../../utils/format';
 
-const Searches = () => {
+/** PRD "Searched / Folders filters": Today, Yesterday, In last 2 / 5 / 7 days, Custom date range. */
+const SPANS = [
+  { value: 'today', label: 'Today' },
+  { value: 'yesterday', label: 'Yesterday' },
+  { value: '2d', label: 'In last 2 days' },
+  { value: '5d', label: 'In last 5 days' },
+  { value: '7d', label: 'In last 7 days' },
+  { value: 'custom', label: 'Custom date range' },
+];
+const toSpan = ({ timespan, from, to }) => {
+  if (!timespan) return {};
+  if (timespan !== 'custom') return { timespan };
+  return { ...(from ? { from: new Date(`${from}T00:00:00`).toISOString() } : {}), ...(to ? { to: new Date(`${to}T23:59:59`).toISOString() } : {}) };
+};
+const SpanFilter = ({ value, onChange }) => (
+  <div className="mb-4 flex flex-wrap items-end gap-2">
+    <SimpleSelect ariaLabel="Updated" placeholder="Any time" value={value.timespan} onChange={(timespan) => onChange({ ...value, timespan })} options={SPANS} />
+    {value.timespan === 'custom' && (
+      <>
+        <TextField label="From" type="date" max={new Date()} value={value.from} onChange={(e) => onChange({ ...value, from: e.target.value })} />
+        <TextField label="To" type="date" max={new Date()} value={value.to} onChange={(e) => onChange({ ...value, to: e.target.value })} />
+      </>
+    )}
+  </div>
+);
+
+const Searches = ({ span }) => {
   const [tab, setTab] = useState('mine');
-  const query = useQuery({ queryKey: ['saved-searches', tab], queryFn: () => talentApi.searches({ tab, limit: 100 }) });
+  const query = useQuery({ queryKey: ['saved-searches', tab, span], queryFn: () => talentApi.searches({ tab, limit: 100, ...span }) });
   const remove = useAction(talentApi.removeSearch, { success: 'Search deleted', invalidate: ['saved-searches'] });
   return (
     <>
@@ -80,8 +106,8 @@ const FolderDrawer = ({ folder, onClose }) => {
   );
 };
 
-const Folders = () => {
-  const query = useQuery({ queryKey: ['folders'], queryFn: () => talentApi.folders({ tab: 'all' }) });
+const Folders = ({ span }) => {
+  const query = useQuery({ queryKey: ['folders', span], queryFn: () => talentApi.folders({ tab: 'all', ...span }) });
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
   const [open, setOpen] = useState(null);
@@ -136,7 +162,10 @@ const Folders = () => {
 
 const SavedSearches = () => {
   useDocumentTitle('Saved searches');
-  const [tab, setTab] = useState('searches');
+  const [params] = useSearchParams();
+  const [tab, setTab] = useState(params.get('tab') === 'folders' ? 'folders' : 'searches');
+  const [range, setRange] = useState({ timespan: '', from: '', to: '' });
+  const span = toSpan(range);
   return (
     <div>
       <PageHeader title="Saved Searches & Folders" />
@@ -149,7 +178,8 @@ const SavedSearches = () => {
           { value: 'folders', label: 'Folders' },
         ]}
       />
-      {tab === 'searches' ? <Searches /> : <Folders />}
+      <SpanFilter value={range} onChange={setRange} />
+      {tab === 'searches' ? <Searches span={span} /> : <Folders span={span} />}
     </div>
   );
 };

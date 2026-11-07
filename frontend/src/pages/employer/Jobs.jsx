@@ -4,15 +4,26 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import ShareMenu from '../../components/common/ShareMenu';
 import UpsellNotice from '../../components/employer/UpsellNotice';
 import Button from '../../components/ui/Button';
-import { Badge, DataTable, PageHeader, Pagination, SearchInput, StatusBadge, Tabs } from '../../components/ui/data';
+import { Badge, DataTable, PageHeader, Pagination, SearchInput, SimpleSelect, StatusBadge, Tabs } from '../../components/ui/data';
 import { CheckboxField } from '../../components/ui/form';
 import { ConfirmDialog, EmptyState, Icon, Modal } from '../../components/ui/feedback';
+import useAuth from '../../hooks/useAuth';
 import { useAction, useDocumentTitle, useUrlFilters } from '../../hooks/useData';
 import useDebounce from '../../hooks/useDebounce';
 import { employerJobApi, orgApi } from '../../services';
 import { formatDate, formatLocations, titleCase } from '../../utils/format';
 
 const STATUSES = ['', 'active', 'pending', 'admin_review', 'draft', 'closed', 'expired', 'rejected'];
+const KINDS = [
+  { value: 'job', label: 'Job vacancy' },
+  { value: 'internship', label: 'Internship' },
+];
+const SORTS = [
+  { value: '-createdAt', label: 'Posted date (newest)' },
+  { value: 'createdAt', label: 'Posted date (oldest)' },
+  { value: 'title', label: 'Job title (A to Z)' },
+  { value: '-title', label: 'Job title (Z to A)' },
+];
 
 const TeamShare = ({ job, onClose }) => {
   const team = useQuery({ queryKey: ['team', 'options'], queryFn: () => orgApi.team({ limit: 100 }) });
@@ -29,10 +40,43 @@ const TeamShare = ({ job, onClose }) => {
   );
 };
 
+/** "Request Call Back" list for one job (opened from the row or from the notification link). */
+const Callbacks = ({ jobId, onClose }) => {
+  const q = useQuery({ queryKey: ['job-callbacks', jobId], queryFn: () => employerJobApi.callbacks(jobId, { limit: 100 }) });
+  const rows = q.data?.data || [];
+  return (
+    <Modal open onClose={onClose} title="Call back requests" size="md">
+      {q.isPending && <p className="text-sm text-brand-gray">Loading…</p>}
+      {q.data && !rows.length && <EmptyState icon="phone_callback" title="No call back requests yet" />}
+      <ul className="divide-y divide-brand-border">
+        {rows.map((r) => (
+          <li key={r._id} className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm">
+            <span className="min-w-0">
+              <span className="block font-medium text-brand-dark">{r.candidate?.fullName || 'Candidate'}</span>
+              <span className="text-xs text-brand-gray-muted">{formatDate(r.createdAt, 'd MMM yyyy, h:mm a')}</span>
+            </span>
+            {r.candidate?.mobile && (
+              <a href={`tel:+91${r.candidate.mobile}`} className="inline-flex items-center gap-1 font-semibold text-brand-blue">
+                <Icon name="call" size={16} /> +91 {r.candidate.mobile}
+              </a>
+            )}
+          </li>
+        ))}
+      </ul>
+    </Modal>
+  );
+};
+
 const Jobs = () => {
   useDocumentTitle('Jobs');
   const navigate = useNavigate();
   const [filters, setFilters] = useUrlFilters({ page: '1' });
+  const { user } = useAuth();
+  const team = useQuery({ queryKey: ['team', 'options'], queryFn: () => orgApi.team({ limit: 100 }), staleTime: 60 * 1000 });
+  const postedByOptions = [
+    { value: 'me', label: 'Posted by me' },
+    ...(team.data?.data || []).filter((m) => String(m._id) !== String(user?._id)).map((m) => ({ value: m._id, label: m.fullName || m.email })),
+  ];
   const [q, setQ] = useState(filters.q || '');
   const [confirm, setConfirm] = useState(null);
   const [sharing, setSharing] = useState(null);
@@ -41,7 +85,8 @@ const Jobs = () => {
   useEffect(() => {
     if (debounced !== (filters.q || '')) setFilters({ q: debounced });
   }, [debounced]); // eslint-disable-line react-hooks/exhaustive-deps
-  const params = { limit: 20, sort: '-createdAt', ...filters };
+  const { callbacks: _cb, ...listFilters } = filters;
+  const params = { limit: 20, sort: '-createdAt', ...listFilters };
   const query = useQuery({ queryKey: ['employer-jobs', params], queryFn: () => employerJobApi.list(params), placeholderData: keepPreviousData });
   const counts = query.data?.meta?.counts || {};
   const inv = { invalidate: ['employer-jobs'] };
@@ -74,6 +119,11 @@ const Jobs = () => {
       ),
     },
     { key: 'date', header: 'Posted', render: (j) => formatDate(j.publishedAt || j.createdAt) },
+    {
+      key: 'postedBy',
+      header: 'Posted by',
+      render: (j) => (String(j.postedBy?._id || j.postedBy) === String(user?._id) ? 'Me' : j.postedBy?.fullName || j.postedBy?.email || '—'),
+    },
     { key: 'status', header: 'Status', render: (j) => <StatusBadge status={j.status} /> },
   ];
   const iconBtn = 'rounded p-1.5 text-brand-gray hover:bg-brand-tint hover:text-brand-blue';
@@ -105,7 +155,12 @@ const Jobs = () => {
       />
       <UpsellNotice error={publish.error || bulk.error} />
       <Tabs className="mb-4" value={filters.status || ''} onChange={(status) => setFilters({ status })} tabs={STATUSES.map((s) => ({ value: s, label: s ? titleCase(s) : 'All', count: s ? counts[s] || 0 : undefined }))} />
-      <SearchInput className="mb-4 max-w-sm" value={q} onChange={setQ} placeholder="Search title or client" />
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <SearchInput className="w-full sm:max-w-xs" value={q} onChange={setQ} placeholder="Search title, job ID or client" />
+        <SimpleSelect ariaLabel="Job or internship" placeholder="Jobs & internships" value={filters.kind} onChange={(kind) => setFilters({ kind })} options={KINDS} />
+        <SimpleSelect ariaLabel="Posted by" placeholder="Posted by anyone" value={filters.postedBy} onChange={(postedBy) => setFilters({ postedBy })} options={postedByOptions} />
+        <SimpleSelect ariaLabel="Sort by" value={filters.sort || '-createdAt'} onChange={(sort) => setFilters({ sort })} options={SORTS} />
+      </div>
       <DataTable
         columns={columns}
         rows={query.data?.data}
@@ -133,6 +188,12 @@ const Jobs = () => {
                 <Icon name="refresh" size={18} />
               </button>
             )}
+            {j.callbackRequests > 0 && (
+              <button className={`${iconBtn} relative`} title="Call back requests" aria-label={`${j.callbackRequests} call back requests`} onClick={() => setFilters({ callbacks: j._id })}>
+                <Icon name="phone_callback" size={18} />
+                <span className="absolute -right-0.5 -top-0.5 rounded-full bg-brand-orange px-1 text-[10px] font-bold text-white">{j.callbackRequests}</span>
+              </button>
+            )}
             <button className={iconBtn} title="Share with team" aria-label="Share with team" onClick={() => setSharing(j)}>
               <Icon name="group_add" size={18} />
             </button>
@@ -151,8 +212,9 @@ const Jobs = () => {
           </span>
         )}
       />
-      <Pagination meta={query.data?.meta} onPage={(page) => setFilters({ page })} />
+      <Pagination meta={query.data?.meta} onPage={(page) => setFilters({ page })} limit={filters.limit} onLimit={(limit) => setFilters({ limit })} />
       {sharing && <TeamShare job={sharing} onClose={() => setSharing(null)} />}
+      {filters.callbacks && <Callbacks jobId={filters.callbacks} onClose={() => setFilters({ callbacks: '' })} />}
       <ConfirmDialog
         open={Boolean(confirm)}
         onClose={() => setConfirm(null)}

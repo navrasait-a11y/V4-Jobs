@@ -9,10 +9,12 @@ import Button from '../../components/ui/Button';
 import { Avatar, Badge, DetailRow, Pagination, Section } from '../../components/ui/data';
 import { EmptyState, ErrorState, Icon, Modal, PageLoader } from '../../components/ui/feedback';
 import { MobileField, TextAreaField, TextField } from '../../components/ui/form';
-import { useAction, useDocumentTitle } from '../../hooks/useData';
+import { useAction } from '../../hooks/useData';
 import { employerPublicApi, jobApi, moderationApi } from '../../services';
 import useAuthStore from '../../store/useAuthStore';
 import { formatDate, placeLabel, titleCase } from '../../utils/format';
+import useSeo from '../../hooks/useSeo';
+import AdSlot from '../../components/common/AdSlot';
 
 const ContactModal = ({ org, onClose }) => {
   const user = useAuthStore((s) => s.user);
@@ -111,7 +113,14 @@ const CompanyDetails = () => {
   const query = useQuery({ queryKey: ['employer', id], queryFn: () => employerPublicApi.get(id) });
   const org = query.data?.organization || query.data;
   const blockOrg = useAction(() => moderationApi.block(org._id), { success: 'Employer blocked. Their jobs will be hidden', invalidate: ['blocks'] });
-  useDocumentTitle(org?.name);
+  useSeo({
+    title: org?.name ? `${org.name} jobs and company profile` : undefined,
+    description: org ? `${org.name}${org.industries?.[0] ? `, ${org.industries[0]}` : ''}. ${String(org.about || '').slice(0, 130)}` : undefined,
+    image: org?.logo?.url,
+    jsonLd: org
+      ? { '@context': 'https://schema.org', '@type': 'Organization', name: org.name, url: org.website || window.location.href, logo: org.logo?.url, description: String(org.about || '').slice(0, 300) || undefined }
+      : undefined,
+  });
   const jobs = useQuery({ queryKey: ['employer-jobs', org?._id, page], queryFn: () => jobApi.search({ organization: org._id, page, limit: 10, sort: 'date' }), enabled: Boolean(org?._id) });
 
   if (query.isPending) return <PageLoader />;
@@ -188,6 +197,7 @@ const CompanyDetails = () => {
             <Reviews orgId={org._id} />
           </div>
           <aside className="w-full shrink-0 space-y-4 lg:w-80">
+            <AdSlot placement="company_page" />
             <Section title="Details">
               <dl className="space-y-3">
                 <DetailRow label="Employees" value={org.employeeCount} />

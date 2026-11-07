@@ -5,13 +5,15 @@ import { BlogCard } from './Home';
 import ShareMenu from '../../components/common/ShareMenu';
 import { Avatar, Pagination, SearchInput } from '../../components/ui/data';
 import { CardSkeleton, EmptyState, ErrorState, PageLoader } from '../../components/ui/feedback';
-import { useDocumentTitle, useUrlFilters } from '../../hooks/useData';
+import { useUrlFilters } from '../../hooks/useData';
 import useDebounce from '../../hooks/useDebounce';
 import { cmsApi } from '../../services';
 import { formatDate } from '../../utils/format';
+import useSeo from '../../hooks/useSeo';
+import AdSlot from '../../components/common/AdSlot';
 
 export const CareerAdvice = () => {
-  useDocumentTitle('Career advice');
+  useSeo({ title: 'Career advice and job tips', description: 'Resume tips, interview preparation and career guidance from the Freejobwala team.', path: '/career-advice' });
   const [filters, setFilters] = useUrlFilters({ page: '1' });
   const [q, setQ] = useState(filters.q || '');
   const debounced = useDebounce(q, 400);
@@ -32,6 +34,7 @@ export const CareerAdvice = () => {
       </div>
       <div className="mx-auto max-w-[1200px] px-4 py-6 sm:px-6">
         {query.isPending && <CardSkeleton />}
+        <AdSlot placement="career_advice" className="mb-4" />
         {query.isError && <ErrorState error={query.error} onRetry={query.refetch} />}
         {query.data && !query.data.data.length && <EmptyState icon="article" title="No articles yet" description="New guides will appear here." />}
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -49,7 +52,25 @@ export const CareerAdviceDetail = () => {
   const { id } = useParams();
   const query = useQuery({ queryKey: ['blog', id], queryFn: () => cmsApi.blog(id) });
   const blog = query.data?.blog || query.data;
-  useDocumentTitle(blog?.title);
+  const seoText = ((html) => String(html || '').replace(/<[^>]+>/g, ' '))(blog?.excerpt || blog?.content);
+  useSeo({
+    title: blog?.seo?.title || blog?.title,
+    description: blog?.seo?.description || seoText,
+    image: blog?.seo?.ogImage || blog?.coverImage?.url,
+    type: 'article',
+    jsonLd: blog
+      ? {
+          '@context': 'https://schema.org',
+          '@type': 'Article',
+          headline: blog.title,
+          image: blog.coverImage?.url ? [blog.coverImage.url] : undefined,
+          datePublished: blog.publishedAt,
+          dateModified: blog.updatedAt || blog.publishedAt,
+          author: { '@type': 'Person', name: blog.author?.admin?.nickname || 'Freejobwala' },
+          publisher: { '@type': 'Organization', name: 'Freejobwala' },
+        }
+      : undefined,
+  });
   if (query.isPending) return <PageLoader />;
   if (query.isError) return <div className="mx-auto max-w-[800px] p-6"><ErrorState error={query.error} onRetry={query.refetch} /></div>;
   const author = blog.author?.admin;

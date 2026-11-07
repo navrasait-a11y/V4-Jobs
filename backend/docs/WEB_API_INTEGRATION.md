@@ -252,7 +252,7 @@ Store and send the option's **`name`** (string) in profile, job and alert fields
 | Personal | `dob, maritalStatus, guardianRelation, guardianName, category, currentLocation{locality,district,city,state,country,pincode}, hometown{...}, disability{status,type}, military{status,serviceType}, englishFluency, languages[], assets[], hasTwoWheeler, hasFourWheeler, drivingLicense` |
 | Resume | `resumeHeadline, profileSummary, keySkills[], itSkills[], certifications[]` |
 | Work | `totalExperience{years,months}, currentSalary (monthly in-hand), noticePeriod, industries[], subIndustries[] (≤20), departments[], functions[] (≤20), roles[]` |
-| Preferences | `preferences{ jobModes[] (≤3), locations[place] (≤3), willingToRelocate, anywhereInIndia, expectedSalary, employmentTypes[], shifts[], skills[], industries[], subIndustries[], departments[], functions[], roles[], noticePeriod, jobTypes['job','internship'] }` |
+| Preferences | `preferences{ jobModes[] (≤3), locations[place] (≤4), relocation[] (≤4, lookup relocate_option), distanceKm (5…200), willingToRelocate, anywhereInIndia (derived from relocation), expectedSalary, employmentTypes[], shifts[], skills[], industries[], subIndustries[], departments[], functions[], roles[], noticePeriod, jobTypes['job','internship'] }` |
 | Social / portfolio | `socialProfiles[{platform,url}], portfolios[{name,url}]` |
 | Settings | `notificationPrefs{email,sms,whatsapp,push,jobAlerts,recruiterMessages,marketing}, privacy{profileVisibility: public\|recruiters\|hidden, showContact}` |
 
@@ -275,7 +275,13 @@ Dates in the "MM-YYYY" pickers: send the first day of that month as ISO, e.g. `2
 | GET | `/jobs/:idOrSlug/google-jobs` | – | **schema.org JobPosting JSON-LD**. Inject it into the job page `<head>` as `<script type="application/ld+json">` (only when `platform.googleJobsEnabled`) |
 | GET | `/jobs/sitemap.xml` | – | Proxy it or link it from `robots.txt` |
 
-**Search query params:** `q` (keywords: title / skills / company), `kind=job|internship|any`, `location` (cities or states, comma-separated), `includeRemote`, `experience` (years), `salaryMin`, `salaryMax` (monthly), `stipendMin`, `durationMax` (internship months), `workMode`, `department`, `role`, `industry`, `employmentType`, `education`, `skills`, `shift`, `label` (`premium, starred, featured, actively_hiring, urgent`), `category` (IT Jobs / Non IT Jobs / Work From Home Jobs …), `companyType` (Indian MNC, Startup …), `postedBy=company|consultancy`, `organization` (employer id), `topCompanies=true`, `verifiedOnly=true`, `freshness=1|3|7|15|30` (days), `sort=relevance|date|salary`, `page`, `limit`. Also `function` and `subIndustry` (comma-separated) filter by department function and sub industry.
+**Search query params** ("Other Forms" Excel – Job Search Bar + Side Filters; send lists as repeated keys `role[]=A&role[]=B`, comma strings still work for values without commas):
+* Keywords: `q`, `keywords[]` (≤20 boxes, OR-ed), `mandatory[]` (starred), `allMandatory=true`, `kind=job|internship|any`
+* Location: `location[]` (≤20), `distanceKm=5…200` ("Show jobs within"), `includeRemote`, `remoteOnly`
+* Experience and pay: `experience`, `experienceMin`, `experienceMax` (years, fractional for months), `experienceLevel[]`, `salaryMin`, `salaryMax`, `stipend[]=Paid|Unpaid`, `stipendMin`, `stipendMax`, `durationMax`
+* Side filters: `department[]`, `function[]`, `role[]`, `industry[]`, `subIndustry[]`, `employmentType[]`, `shift[]`, `workMode[]`, `joiningPeriod[]`, `education[]`, `degree[]`, `specialisation[]`, `skills[]`, `label[]`, `category`
+* Employer: `companyType[]`, `companySize[]`, `topCompany[]` (lookup `top_company`), `postedBy[]=company|consultancy`, `organization`, `topCompanies`, `verifiedOnly`
+* `freshness=1|2|4|7|10|15` (Date posted), `sort=relevance|salary|salary_asc|date`
 
 **Job list item fields:** `_id, slug, kind, title, designation, organization, organizationType, orgSnapshot{name,logo,isVerified,slug,username,employerType}, locations[], isRemote, experience{min,max}, salary{min,max,period,hidden,currency}, stipend, duration, jobModes, employmentTypes, keySkills, labels, isFeatured, publishedAt, refreshedAt, deadlineAt, openings, consultancyClient{name?,hideName}, stats.applications`.
 If `salary.hidden` is true, show "Not disclosed". If `consultancyClient.hideName` is true, the client name is not sent.
@@ -296,6 +302,8 @@ If `salary.hidden` is true, show "Not disclosed". If `consultancyClient.hideName
 | POST | `/invites/:id/decline` | candidate | – | |
 
 **Guest apply multipart fields** (PRD "Candidate Job Apply form"): `otp*, fullName*, mobile*, email*, acceptTerms*=true, gender, dob, maritalStatus, disability (JSON {status,type}), military (JSON), hasTwoWheeler, hasFourWheeler, drivingLicense, assets (JSON array), education (JSON {level,degree,specialisation,institution}), presentJobStatus, experienceLevel, totalExperienceMonths, currentJobTitle, currentSalary, keySkills (JSON array), roles (JSON), departments (JSON), industries (JSON), currentCompany, currentCompanyType, employmentType, currentlyWorking, workLocation (JSON place), noticePeriod, currentLocation (JSON place), languages (JSON), englishFluency, preferredLocations (JSON array, ≤4), heardFrom, consentCommunication, answers (JSON), eventId`.
+
+Excel "Job Apply Form- Direct" additions: `documents` (JSON, ≤35), `assets` (≤25), `keySkills` (≤20), `roles` (≤15), `industries`+`subIndustries`, `departments`+`functions` (5 + 20), `relocation` (JSON, ≤4), `distanceKm`. Screening answers: `multiple_choice` takes an array; `number` / `text` are checked (`ANSWER_INVALID`). Labels: "I am Experienced / I am Fresher / I did an Internship / I did an Apprenticeship"; after success show "Setup Profile and Job Preference".
 
 Pipeline stages: `applied → screened → interview_scheduled → offered → hired` (also `rejected`, `withdrawn`).
 
@@ -337,7 +345,7 @@ Pipeline stages: `applied → screened → interview_scheduled → offered → h
 
 | Method | Path | Auth | Notes |
 |---|---|---|---|
-| GET | `/employers` | – | Top companies list: `?q&type=company\|consultancy&industry&city&verified&label&sort=-stats.activeJobs` |
+| GET | `/employers` | – | Companies directory: `?q&type[]=company\|consultancy&industry[]&city[]` (≤20) `&companyType[]&companySize[]&topCompany[]&verified&label&sort=-stats.activeJobs`. Job-based filters (employers with an active job matching): `datePosted=1\|2\|4\|7\|10\|15`, `role[]`, `department[]`, `experienceLevel[]` |
 | GET | `/employers/:slug` | optional | Public page (by `slug` or `username`). Has `activeJobs` and `isFollowing`. To list the employer's jobs use `GET /jobs?organization=<_id>` |
 | POST / DELETE | `/employers/:id/follow` | candidate | Followers get notified about new jobs |
 | GET | `/employers/following` | candidate | "Saved companies" |
@@ -528,9 +536,24 @@ Metrics: `job_post, resume_view (contact unlock), resume_download, invite, excel
 | PUT | `/employer/jobs/:id/collaborators` | `{ memberIds: [] }` | Collaborate / share with internal team |
 | GET | `/employer/jobs/:id/share` | | Social share links |
 | POST | `/employer/jobs/bulk-import?publish=false` | multipart `file` (xlsx) | Paid plans only (`FEATURE_LOCKED`). Columns: Job Title, Designation, Description, Key Skills, City, State, Min Experience, Max Experience, Min Salary, Max Salary, Openings, Employment Type, Work Mode, Industry, Department, Role, Kind, Client Name |
-| POST | `/jobs/guest-post` | `{ employer:{ employerType, organizationName, fullName, email, mobile, designation?, heardFrom?, declarations, acceptTerms:true }, job:{...} }` | **Post a job without login** (public). Creates the employer account and e-mails a set-password link |
+| POST | `/jobs/guest-post/otp` | `{ mobile }` | **Post a job without login**, step 1: "Enter OTP & Verify" |
+| POST | `/jobs/guest-post` | `{ employer:{ otp, employerType, organizationName, fullName, email, mobile, designation?, heardFrom?, declarations:{authorized:true,noCandidateFee:true}, consentCommunication?, acceptTerms:true }, job:{...} }` | Step 2 "Complete the Posting" (public). Creates the employer (mobile verified) and e-mails a set-password link. The job waits for review |
+| GET | `/employer/jobs/:id/callbacks` | | "Request Call Back" list `[{candidate{fullName,mobile,email}, createdAt}]` |
 
-**Job fields:** `kind (job|internship), title*, designation, description, responsibilities, keySkills[] (≤30), industries[] (≤5), subIndustries[] (≤20), departments[] (≤5), functions[] (≤20), roles[] (≤10), category, employmentTypes[], jobModes[], shifts[], openings, experience{min,max} (years), experienceLevels[], salary{min,max,type,period:monthly|yearly,currency,hidden}, perks[], stipend{min,max,type}, duration{value,unit:days|weeks|months}, internshipStartDate, education{levels[],degrees[],specialisations[]}, gender (any|male|female|transgender|other), ageRange{min,max}, languages[], assets[], noticePeriod, locations[place] (≤15), address, isRemote, consultancyClient{name,hideName,industry} (consultancies hiring for a client), contact{name,email,mobile,showToCandidates}, questions[{question,type:text|yes_no|number|choice,options[],required}] (≤10), applyExternalUrl, deadlineAt, expiresAt, googleJobsEnabled`.
+**Job fields** ("Other Forms" Excel – Post a Job / Post an Internship):
+* Basics: `kind (job|internship), title*, designation, description (≤5000 words), responsibilities, keySkills[] (≤15), category, openings, deadlineAt (Last date to apply), expiresAt, applyExternalUrl, googleJobsEnabled`
+* Industry and roles: `industries[] (≤5), subIndustries[] (≤20), departments[] (≤5), functions[] (≤20), roles[] (≤20)`
+* Work: `employmentTypes[]` (one in the UI), `jobModes[]` (one in the UI), `shifts[], noticePeriods[], assets[]` (lookup `asset`), `locations[place] (≤4), distanceKm (5|10|15|20|25|35|50|75|100|150|200), relocateOptions[]` (lookup `relocate_option`), `address, isRemote`
+* Pay and experience: `experienceLevels[], experience{min,max}` (years, fractional for months: 1 month = 0.0833), `salary{min,max,type,period,currency,hidden}` (types include "Commission Based"), `perks[] (≤10)`
+* Internship: `internshipType (Full Time|Part Time), duration{value,unit:months,noFixed}` ("No Fixed Duration" = `noFixed:true`), `stipend{paid,type,min,max,hidden}`, `internshipStartDate`
+* Education: `education{levels[],degrees[],specialisations[],institutions[],types[],statuses[],mediums[],marksType,marksValue}, certifications[]`
+* Candidate criteria: `genders[] (Male|Female|Other), maritalStatuses[], ageRange{min 18,max 61}` (61 = "60+ Years"), `englishFluency[], languages[], diversity[]` (lookup `diversity_hiring`), `disabilityStatuses[], disabilityTypes[]`. Legacy single `gender` / `noticePeriod` are still accepted.
+* Communication: `interviewMode` (lookup `interview_mode`), `walkIn{startDate,endDate,durationDays,timing,contactName,contactMobile,contactEmail,venue,mapUrl}` (for Walk-in), `contact{name,email,mobile,timeFrom,timeTo,dayFrom,dayTo}` (times like `09:30 AM`, days Monday … Sunday)
+* Screening: `questions[{question,type:single_choice|multiple_choice|short_answer|text|number,options[],required}] (≤10)`
+* Collaborate: `responseAlerts{daily,everyResponse,emails[≤10]}` – daily summary at 09:00 IST and an e-mail per response to the poster + `emails`. Team members who can view / edit the job: `PUT /employer/jobs/:id/collaborators`.
+* `consultancyClient{name,hideName,industry}` = "Company You're Hiring For" + "Hide Company Name to Candidates".
+
+Public job pages never include phone numbers or e-mails. A signed-in candidate gets `contactAction` ("Call Now" `{type:'call', mobile, …}` or "Request Call Back" `{type:'callback', requested}` → `POST /jobs/:id/callback`). The employer sees requests at `GET /employer/jobs/:id/callbacks` and gets a notification for each.
 Publishing needs `description` and at least one location. The default expiry is 30 days (admin setting).
 
 ### 6.3 Responses / ATS
@@ -565,12 +588,12 @@ Needs an active plan with resume-database access, otherwise `402 FEATURE_LOCKED`
 | GET | `/employer/talent/candidates/:candidateId` | Full profile (records a profile view; free). Includes `trackingDetail`, `applications` |
 | POST | `/employer/talent/candidates/:candidateId/unlock` | Contact details `{ email, mobile }` – uses 1 `resume_view` credit the first time only |
 | GET | `/employer/talent/candidates/:candidateId/resume` | `{ url, name }` – uses 1 `resume_download` credit the first time only |
-| PATCH | `/employer/talent/candidates/:candidateId/tracking` | `{ screeningStatus?, callingStatus?, messagingStatus?[], comment?, forward? }` |
+| PATCH | `/employer/talent/candidates/:candidateId/tracking` | `{ stage?, screeningStatus?, callingStatus?, messagingStatus?[], comment?, forward? }` – `stage` = "Mark Candidate Status / Interview Stage" (lookup `candidate_stage`, empty string clears). Cards return it as `tracking.stage` |
 | POST / DELETE | `/employer/talent/candidates/:candidateId/block` | Block candidate |
-| GET | `/employer/talent/searches/recent` | Recent searches |
-| GET | `/employer/talent/searches?tab=mine\|shared\|all` | Saved searches ("My saved searches", "Searches shared with me") |
+| GET | `/employer/talent/searches/recent?timespan=` | Recent searches (also used by the header search shortcut) |
+| GET | `/employer/talent/searches?tab=mine\|shared\|all&timespan=today\|yesterday\|2d\|5d\|7d\|custom&from&to` | Saved searches ("My saved searches", "Searches shared with me"). `timespan` = PRD "Searched filters" on last update |
 | POST / PATCH / DELETE | `/employer/talent/searches[/:id]` | `{ name, filters, sharedWith?[memberIds], alertEnabled? }` |
-| GET | `/employer/talent/folders?tab=mine\|shared\|all` | `{ system:{accessed,commented,contacted,shortlisted,rejected,hold}, folders[{_id,name,count,sharedWith}] }` |
+| GET | `/employer/talent/folders?tab=mine\|shared\|all&timespan=&from&to` | `{ system:{accessed,commented,contacted,shortlisted,rejected,hold}, folders[{_id,name,count,sharedWith}] }` |
 | GET | `/employer/talent/folders/system/:key` | Candidates in a system folder |
 | POST / PATCH / DELETE | `/employer/talent/folders[/:id]` | Create, rename or delete. `sharedWith` shares the folder |
 | GET | `/employer/talent/folders/:id` | Candidates in the folder |
@@ -592,16 +615,31 @@ Needs an active plan with resume-database access, otherwise `402 FEATURE_LOCKED`
   "passingYearFrom": 2015, "passingYearTo": 2024, "genders": [], "careerBreak": false, "disabledOnly": false,
   "militaryOnly": false, "categories": [], "ageMin": 21, "ageMax": 35, "jobTypes": ["job"], "employmentTypes": [],
   "jobModes": [], "experienceLevels": [], "show": "all", "verifiedMobile": true, "verifiedEmail": false,
-  "withResume": true, "activeIn": "30d", "sort": "relevance", "jobId": null
+  "withResume": true, "activeIn": "30d", "sort": "relevance", "jobId": null,
+
+  "mandatoryKeywords": ["node"], "mustHaveKeywords": [], "distanceKm": 25,
+  "relocateInclude": ["Yes- Ready To Relocate"], "relocateExclude": [],
+  "subIndustries": [], "functions": [], "shifts": [], "assets": [], "documents": [],
+  "educationTypes": [], "educationStatuses": [], "certifications": [],
+  "maritalStatuses": [], "englishFluency": [], "languages": [], "diversity": ["Woman"],
+  "disabilityStatuses": [], "disabilityTypes": [], "militaryStatuses": [], "serviceTypes": [],
+  "candidateTypes": ["new"], "candidatesWith": ["verified_mobile"], "lastActive": "30", "hide": ["viewed"]
 }
 ```
 
 Field notes:
-* `companyScope` / `designationScope`: `current`, `previous` or `both`.
+* Keywords (≤20) also match name, mobile and e-mail through the text index. `mandatoryKeywords` = starred keywords (each must match), `keywordMode: "all"` = mark all as mandatory, `mustHaveKeywords` / `excludeKeywords` ≤15 each.
+* `companyScope`: `current`, `previous`, `both` (Current/Previous Company) or `exclude`. `designationScope`: `current`, `previous` or `both`.
+* `distanceKm` widens `locations` to cities within that radius (city coordinates from the Locations master).
+* `diversity`: Man, Woman, Man / Woman Returning to work (not working now), Ex-Army Personal (previously served), Differently-abled. Options are OR-ed.
+* `candidateTypes`: `new, modified, active, trending, featured, premium`. `candidatesWith`: `verified_mobile, whatsapp, verified_email, resume`. `lastActive`: `1, 2, 4, 7, 10, 15, 30, 60, 90, 180, 365` days or `365+` (inactive for over a year).
+* `hide`: `unlocked, viewed, downloaded` (in a responses Excel export), `invited, invited_whatsapp`.
+* Experience is in years; months are fractions (6 months = 0.5).
 * `show`: `all`, `new` (new registrations) or `modified`.
 * `activeIn`: `1d, 2d, 5d, 7d, 15d, 30d, 45d, 2m, 4m, 6m, 1y, 2y`.
-* `sort`: `relevance`, `freshness`, `last_active` or `ai` (AI relevance needs `jobId`).
-* `locations`: up to 10.
+* `sort`: `relevance`, `freshness`, `last_active`, `email_optimized` (verified e-mails first) or `ai` (AI relevance needs `jobId`). A non-relevance sort also applies when keywords are given.
+* Page size (`?limit=`): 10, 20, 30, 40, 60, 80, 100, 150 or 200.
+* `locations`: up to 10 (the UI allows 4).
 * Salary is the monthly figure.
 
 **Candidate card:** `candidateId, name, avatar, gender, isVerified, mobileVerified, emailVerified, lastActiveAt, labels, email (masked), mobile (masked), contactUnlocked, hasResume, experienceLevel, totalExperienceMonths, currentJobTitle, currentEmployer, currentSalary, expectedSalary, noticePeriod, currentLocation, preferredLocations, keySkills, resumeHeadline, highestEducation, previousEmployers[], profileCompletion, isBoosted, profileUpdatedAt, tracking, matchScore?`.
@@ -626,6 +664,8 @@ Every `/admin/*` call needs an `admin` or `super_admin` token. Sub-admins only s
 
 ### 7.1 Dashboard and statistics (`timespan` filter everywhere)
 
+`GET /admin/dashboard` also returns `trend[{date,candidates,employers,applications,jobs}]`, `jobsInRange`, `newEmployers`, `pending.employers` and `recent{candidates,employersToApprove,jobsToReview,orders}`. `GET /admin/system/health` = platform health (services, integrations, 24 h delivery and login stats, suspicious IPs, missing config).
+
 | Path | Data |
 |---|---|
 | `GET /admin/dashboard` | Users by role and status, companies and consultancies by status, jobs by status, applications, revenue, new users, pending queues (reports, support chats, KYC, job reviews) |
@@ -641,6 +681,10 @@ Every `/admin/*` call needs an `admin` or `super_admin` token. Sub-admins only s
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/admin/candidates` | `?q` (name / mobile / e-mail / CAND-id) `&status&source=direct\|excel_import\|job_apply\|event_apply\|job_alert\|admin\|google&label&situationTag&verified&hasResume&city&skill&experienceLevel&jobApplied&timespan&sort` |
+| GET / PATCH | `/admin/candidates/:id/profile` | **Full profile editing for any candidate** - same body and response as `/candidates/me` |
+| POST / PATCH / DELETE | `/admin/candidates/:id/profile/employments[/:itemId]`, `/educations[/:itemId]` | Same as the candidate's own section endpoints |
+| POST / DELETE | `/admin/candidates/:id/profile/resume`, `POST /admin/candidates/:id/profile/avatar`, `GET .../resume/download` | Resume and photo for the candidate |
+| GET | `/admin/users/:id` | `{ user }` with admin fields (any user, e.g. an employer team member) |
 | GET | `/admin/candidates/export?<filters>&format` | Bulk Excel / CSV download |
 | POST | `/admin/candidates/import?mode=create\|update\|replace&dryRun=true` | multipart `file`. `dryRun` = **detect duplicates** (by mobile / e-mail) without importing. `update` = rewrite existing data. `replace` = delete previously imported (never logged-in) candidates first. Columns: Full Name, Email ID, Mobile Number, Gender, Experience Level, Current Job Title, Key Skills, Current City, State, Total Experience (Months), Current Salary, Level of Education, Degree |
 | POST | `/admin/candidates` | Create one candidate (activation e-mail) |
@@ -756,6 +800,19 @@ Locations: `GET/POST /admin/locations`, `PATCH/DELETE /admin/locations/:id`, `PO
 * **Audit logs:** `GET /admin/audit-logs?actor&action&entity&entityId&timespan`.
 
 ---
+
+## 7.11 SEO and browser push (web)
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/seo/sitemap.xml` | Every public URL: static pages, active jobs, companies, recruiters, published events, blogs and CMS pages (≤50,000). The web app serves it at `/sitemap.xml` through the Vercel function `frontend/api/sitemap.js`; `/robots.txt` (`frontend/api/robots.js`) points to it |
+| GET | `/seo/meta?path=/jobs/<slug>` | `{ title, description, image, type, url }` for one public page (jobs, companies, recruiters, events, career-advice, legal). Used for link previews |
+| PUT | `/auth/device-token` | `{ fcmToken }` – also used by the website for **browser push** (Firebase web) |
+
+* Every public page sets its own title, description, canonical URL, Open Graph / Twitter tags and JSON-LD (`JobPosting`, `Organization`, `Event`, `Article`, `FAQPage`, `WebSite` search box) with `src/hooks/useSeo.js`.
+* WhatsApp, Facebook, LinkedIn, X, Telegram and other preview bots do not run JavaScript: `vercel.json` sends only their user agents to `frontend/api/seo.js`, which returns the same tags as plain HTML. People and Google get the normal app.
+* Browser push: the Notifications page has **Turn on browser notifications**. It registers `public/firebase-messaging-sw.js`, saves the token with `PUT /auth/device-token`, and re-syncs on each visit. Pushes carry `data.link` (and `webpush.fcmOptions.link`), so a click opens the right page.
+* Frontend env for push: `VITE_FIREBASE_API_KEY, VITE_FIREBASE_AUTH_DOMAIN, VITE_FIREBASE_PROJECT_ID, VITE_FIREBASE_MESSAGING_SENDER_ID, VITE_FIREBASE_APP_ID, VITE_FIREBASE_VAPID_KEY` (same Firebase project as `FIREBASE_SERVICE_ACCOUNT_JSON`). Without them the option stays hidden.
 
 ## 8. Integration checklist
 

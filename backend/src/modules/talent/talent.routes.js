@@ -5,7 +5,7 @@ import { authenticate, authorize, requireEmployer } from '../../shared/middlewar
 import { heavyLimiter } from '../../shared/middleware/rateLimit.js';
 import { ok, created, paginated } from '../../shared/http/response.js';
 import { parsePagination } from '../../shared/utils/pagination.js';
-import { objectId, idParam, pagination, stringList, bulkIds } from '../../shared/validators/common.js';
+import { objectId, idParam, pagination, stringList, bulkIds, timespan } from '../../shared/validators/common.js';
 import {
   ROLES,
   SCREENING_STATUS,
@@ -97,7 +97,7 @@ export const searchFilters = Joi.object({
   verifiedEmail: Joi.boolean(),
   withResume: Joi.boolean(),
   activeIn: Joi.string().valid('all', ...Object.keys(ACTIVE_IN_DAYS)),
-  sort: Joi.string().valid('relevance', 'freshness', 'last_active', 'ai').default('relevance'),
+  sort: Joi.string().valid('relevance', 'freshness', 'last_active', 'email_optimized', 'ai').default('relevance'),
   jobId: objectId,
 });
 
@@ -148,11 +148,11 @@ r.post(
 r.get('/search/from-job/:id', requireEmployer('candidate.search'), validate({ params: idParam }), async (req, res) =>
   ok(res, await s.filtersFromJob(req.user, req.params.id)),
 );
-r.get('/searches/recent', requireEmployer('candidate.search'), async (req, res) => ok(res, await s.recentSearches(req.user)));
+r.get('/searches/recent', requireEmployer('candidate.search'), validate({ query: Joi.object(timespan) }), async (req, res) => ok(res, await s.recentSearches(req.user, 'resume', req.query)));
 r.get(
   '/searches',
   requireEmployer(),
-  validate({ query: Joi.object({ ...pagination, tab: Joi.string().valid('mine', 'shared', 'all').default('mine') }) }),
+  validate({ query: Joi.object({ ...pagination, ...timespan, tab: Joi.string().valid('mine', 'shared', 'all').default('mine') }) }),
   async (req, res) => paginated(res, await s.listSavedSearches(req.user, { ...req.query, ...parsePagination(req.query) })),
 );
 r.post(
@@ -188,7 +188,7 @@ r.delete('/searches/:id', requireEmployer('saved_search.manage_own', 'saved_sear
 });
 
 /* folders */
-r.get('/folders', requireEmployer(), validate({ query: Joi.object({ tab: Joi.string().valid('mine', 'shared', 'all').default('mine') }) }), async (req, res) =>
+r.get('/folders', requireEmployer(), validate({ query: Joi.object({ ...timespan, tab: Joi.string().valid('mine', 'shared', 'all').default('mine') }) }), async (req, res) =>
   ok(res, await s.listFolders(req.user, req.query)),
 );
 r.get(

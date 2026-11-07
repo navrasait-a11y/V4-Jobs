@@ -77,7 +77,11 @@ const schema = Joi.object({
   APITXT_SENDER_ID: Joi.string().allow('').default(''), // DLT approved 6-char header
   APITXT_ROUTE: Joi.string().default('4'), // 4 = transactional, 1 = promotional
   APITXT_PE_ID: Joi.string().allow('').default(''), // DLT principal entity id
-  APITXT_OTP_MODE: Joi.string().valid('dlt', 'otp_api').default('dlt'),
+  // OTP: "otp_api" = Unified OTP API (/api/sendOTP, no DLT template needed); "dlt" = DLT template SMS via /api/sendMsg.
+  APITXT_OTP_MODE: Joi.string().valid('dlt', 'otp_api').default('otp_api'),
+  APITXT_OTP_CHANNEL: Joi.string().valid('sms', 'whatsapp', 'voice').default('sms'),
+  APITXT_OTP_TEMPLATE_ID: Joi.string().allow('').default(''), // optional: apitxt dashboard SMS template id (sms channel)
+  APITXT_OTP_TEMPLATE_NAME: Joi.string().allow('').default(''), // optional: WhatsApp template name (whatsapp channel)
   APITXT_TEMPLATE_OTP: Joi.string().allow('').default(''),
   APITXT_TEMPLATE_INTERVIEW: Joi.string().allow('').default(''),
   APITXT_TEMPLATE_INTERVIEW_REMINDER: Joi.string().allow('').default(''),
@@ -124,7 +128,7 @@ const { value: env, error } = schema.validate(process.env, { abortEarly: false, 
 
 /** Provider keys that must be present in production so messages never silently go nowhere. */
 function productionChecks(e) {
-  if (e.NODE_ENV !== 'production') return [];
+  if (e.NODE_ENV !== 'production' && !e.__all) return [];
   const missing = [];
   if (/^redis:\/\/.*upstash\.io/i.test(e.REDIS_URL)) missing.push('REDIS_URL');
   const need = (cond, key) => cond && !e[key] && missing.push(key);
@@ -146,6 +150,7 @@ function launchWarnings(e) {
   const dlt = e.SMS_PROVIDER === 'apitxt' && e.APITXT_OTP_MODE === 'dlt';
   missing(e.SMS_PROVIDER === 'apitxt' && !e.APITXT_API_KEY, ['APITXT_AUTH_KEY'], 'SMS will fail');
   missing(dlt, ['APITXT_SENDER_ID', 'APITXT_PE_ID', 'APITXT_TEMPLATE_OTP'], 'OTP SMS will fail');
+  missing(e.SMS_PROVIDER === 'apitxt', ['APITXT_SENDER_ID', 'APITXT_PE_ID'], 'non-OTP SMS (interview, alerts, bulk) fail and are logged until DLT is set up');
   missing(e.RAZORPAY_KEY_ID, ['COMPANY_GSTIN', 'COMPANY_ADDRESS'], 'tax invoices will be incomplete');
   return warnings;
 }
@@ -237,6 +242,9 @@ const config = Object.freeze({
       route: env.APITXT_ROUTE,
       peId: env.APITXT_PE_ID,
       otpMode: env.APITXT_OTP_MODE,
+      otpChannel: env.APITXT_OTP_CHANNEL,
+      otpTemplateId: env.APITXT_OTP_TEMPLATE_ID,
+      otpTemplateName: env.APITXT_OTP_TEMPLATE_NAME,
       templates: {
         otp: env.APITXT_TEMPLATE_OTP,
         interview: env.APITXT_TEMPLATE_INTERVIEW,
@@ -275,5 +283,8 @@ const config = Object.freeze({
   runScheduler: env.RUN_SCHEDULER,
   runWorkers: env.RUN_WORKERS,
 });
+
+/** Missing optional keys, for the admin health panel (any environment). */
+export const configWarnings = () => (error ? [] : launchWarnings({ ...env, __all: true }));
 
 export default config;

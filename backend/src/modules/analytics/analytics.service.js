@@ -158,15 +158,39 @@ export async function adminDashboard(q) {
     orgStats[o._id.type][o._id.status] = o.count;
     orgStats[o._id.type].total += o.count;
   }
+  const [candidatesDaily, employersDaily, applicationsDaily, jobsDaily, jobsInRange, pendingEmployers, recentCandidates, employersToApprove, jobsToReview, recentOrders] =
+    await Promise.all([
+      dailySeries(User, { role: ROLES.CANDIDATE, createdAt: created }),
+      dailySeries(Organization, { createdAt: created }),
+      dailySeries(Application, { createdAt: created }),
+      dailySeries(Job, { publishedAt: created }, 'publishedAt'),
+      Job.countDocuments({ publishedAt: created }),
+      Organization.countDocuments({ status: { $in: [USER_STATUS.PENDING, 'admin_review'] } }),
+      User.find({ role: ROLES.CANDIDATE, status: { $ne: USER_STATUS.TRASHED } }).sort({ createdAt: -1 }).limit(6).select('fullName email avatar source createdAt').lean(),
+      Organization.find({ status: { $in: [USER_STATUS.PENDING, 'admin_review'] } }).sort({ createdAt: -1 }).limit(6).select('name type logo kycStatus createdAt').lean(),
+      Job.find({ status: { $in: ['pending', 'admin_review'] } }).sort({ updatedAt: -1 }).limit(6).select('title orgSnapshot.name status statusReason updatedAt').lean(),
+      Order.find({ status: 'paid' }).sort({ paidAt: -1 }).limit(6).select('planName total paidAt invoiceNumber').lean(),
+    ]);
+  // One row per day with every series, for a single trend chart.
+  const days = new Map();
+  const put = (rows, key) => rows.forEach((r) => days.set(r._id, { date: r._id, candidates: 0, employers: 0, applications: 0, jobs: 0, ...days.get(r._id), [key]: r.count }));
+  put(candidatesDaily, 'candidates');
+  put(employersDaily, 'employers');
+  put(applicationsDaily, 'applications');
+  put(jobsDaily, 'jobs');
   return {
     range: { from, to },
     users: roleStatus,
     employers: orgStats,
     jobs: toMap(jobs),
     applicationsInRange: applications,
+    jobsInRange,
     revenue: revenue[0] || { revenue: 0, orders: 0 },
     newUsers: toMap(newUsers),
-    pending: { reports: openReports, supportChats: openSupport, kycReviews: pendingKyc, jobReviews: pendingJobs },
+    newEmployers: employersDaily.reduce((n, r) => n + r.count, 0),
+    trend: [...days.values()].sort((a, b) => a.date.localeCompare(b.date)),
+    pending: { reports: openReports, supportChats: openSupport, kycReviews: pendingKyc, jobReviews: pendingJobs, employers: pendingEmployers },
+    recent: { candidates: recentCandidates, employersToApprove, jobsToReview, orders: recentOrders },
   };
 }
 

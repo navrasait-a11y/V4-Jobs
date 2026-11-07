@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { clsx } from 'clsx';
+import toast from 'react-hot-toast';
 import Logo from '../common/Logo';
 import { Avatar } from '../ui/data';
 import { Icon } from '../ui/feedback';
@@ -118,7 +119,7 @@ const ProfileMenu = ({ user, subtitle, menu }) => {
   };
   return (
     <div className="relative" ref={ref}>
-      <button onClick={() => setOpen((v) => !v)} aria-expanded={open} className="flex items-center gap-1.5 rounded-lg p-1 hover:bg-brand-tint">
+      <button onClick={() => setOpen((v) => !v)} aria-expanded={open} aria-haspopup="menu" aria-label="Account menu" className="flex items-center gap-1.5 rounded-lg p-1 hover:bg-brand-tint">
         <Avatar name={user.fullName} src={user.avatar?.url} size={32} />
         <span className="hidden text-left leading-tight sm:block">
           <span className="block max-w-[140px] truncate text-sm font-medium text-brand-dark">{user.fullName}</span>
@@ -171,6 +172,14 @@ const PanelLayout = ({ nav, role, sidebarHeader, sidebarFooter, topLinks = [], t
   const navigate = useNavigate();
   const { notifications, unread, chatUnread } = useBadges();
   useRealtimeSession();
+  // Browser push: re-sync the token on every visit once the user has allowed notifications.
+  useEffect(() => {
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+    // Loaded on demand so the Firebase SDK is not in the main bundle.
+    import('../../utils/webPush')
+      .then(({ enableWebPush }) => enableWebPush({ onForeground: (n) => n.title && toast(`${n.title}${n.body ? ` - ${n.body}` : ''}`, { icon: '🔔' }) }))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     setDrawer(false);

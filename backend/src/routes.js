@@ -22,6 +22,7 @@ import { router as billingRoutes, adminRouter as billingAdmin } from './modules/
 import analyticsRoutes from './modules/analytics/analytics.routes.js';
 import adminRoutes from './modules/admin/admin.routes.js';
 import webhookRoutes from './modules/notifications/webhook.routes.js';
+import seoRoutes from './modules/seo/seo.routes.js';
 
 /**
  * API surface (all under API_PREFIX, default /api/v1):
@@ -46,6 +47,7 @@ api.use('/job-alerts', alertRoutes);
 api.use('/invites', candidateInvites);
 api.use('/interviews', interviewRouter);
 api.use('/cms', cmsPublic);
+api.use('/seo', seoRoutes);
 api.use('/moderation', moderationRoutes);
 api.use('/chat', chatRoutes);
 api.use('/assistant', assistantRoutes);

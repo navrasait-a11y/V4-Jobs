@@ -1,14 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { MODULES } from './modules';
 import ResourcePage from '../../components/admin/ResourcePage';
-import { MediaField, PlanAndWallet } from '../../components/admin/AdminActions';
+import { MediaField } from '../../components/admin/AdminActions';
+import RichTextEditor from '../../components/admin/RichTextEditor';
 import AccountSecurity from '../../components/shared/AccountSecurity';
 import Button from '../../components/ui/Button';
-import { Avatar, DataTable, DetailRow, PageHeader, Pagination, SearchInput, Section, SimpleSelect, StatTile, StatusBadge, Tabs } from '../../components/ui/data';
+import { DataTable, PageHeader, Pagination, SearchInput, Section, SimpleSelect, Tabs } from '../../components/ui/data';
 import { ConfirmDialog, EmptyState, ErrorState, Icon, Modal, PageLoader } from '../../components/ui/feedback';
 import { CheckboxField, Field, ChoiceChips, SelectField, TextAreaField, TextField } from '../../components/ui/form';
 import useAuth from '../../hooks/useAuth';
@@ -16,7 +17,7 @@ import useDebounce from '../../hooks/useDebounce';
 import { useAction, useDocumentTitle } from '../../hooks/useData';
 import { useSocketEvent } from '../../hooks/useRealtime';
 import { adminApi, lookupApi } from '../../services';
-import { TIMESPAN_OPTIONS, formatCurrency, formatDate, formatDateTime, formatNumber, timeAgo, titleCase } from '../../utils/format';
+import { TIMESPAN_OPTIONS, formatDate, formatDateTime, timeAgo, titleCase } from '../../utils/format';
 
 /** One config-driven screen per URL segment. */
 export const AdminModule = ({ name }) => <ResourcePage key={name} config={MODULES[name]} />;
@@ -31,59 +32,6 @@ export const MediaLibrary = () => {
         <MediaField label="Image" value={file} onChange={setFile} />
         {file?.url && <p className="mt-3 break-all text-sm text-brand-blue">{file.url}</p>}
       </Section>
-    </div>
-  );
-};
-
-export const Overview = () => {
-  useDocumentTitle('Admin overview');
-  const [timespan, setTimespan] = useState('30d');
-  const query = useQuery({ queryKey: ['admin', 'dashboard', timespan], queryFn: () => adminApi.get('/dashboard', { timespan }) });
-  const logins = useQuery({ queryKey: ['admin', 'logins', timespan], queryFn: () => adminApi.get('/stats/logins', { timespan }) });
-  const messaging = useQuery({ queryKey: ['admin', 'messaging', timespan], queryFn: () => adminApi.get('/stats/messaging', { timespan }) });
-  if (query.isError) return <ErrorState error={query.error} onRetry={query.refetch} />;
-  const d = query.data || {};
-  const q = d.pending || {};
-  const employers = (d.employers?.company?.total || 0) + (d.employers?.consultancy?.total || 0);
-  const L = query.isPending;
-  return (
-    <div>
-      <PageHeader title="Overview" actions={<SimpleSelect ariaLabel="Time range" value={timespan} onChange={setTimespan} options={TIMESPAN_OPTIONS} />} />
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile loading={L} icon="person" label="Candidates" value={formatNumber(d.users?.candidate?.total ?? 0)} to="/admin/candidates" />
-        <StatTile loading={L} icon="apartment" tone="orange" label="Employers" value={formatNumber(employers)} to="/admin/employers" />
-        <StatTile loading={L} icon="work" tone="green" label="Active jobs" value={formatNumber(d.jobs?.active ?? 0)} to="/admin/jobs" />
-        <StatTile loading={L} icon="payments" tone="purple" label="Revenue" value={formatCurrency(d.revenue?.revenue ?? 0)} to="/admin/orders" />
-      </div>
-      <h2 className="mb-2 mt-6 font-bold text-brand-dark">Needs attention</h2>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile loading={L} icon="flag" tone="red" label="Open reports" value={q.reports ?? 0} to="/admin/moderation?status=open" />
-        <StatTile loading={L} icon="verified_user" tone="orange" label="KYC documents" value={q.kycReviews ?? 0} to="/admin/kyc" />
-        <StatTile loading={L} icon="rule" tone="blue" label="Jobs to review" value={q.jobReviews ?? 0} to="/admin/jobs?status=admin_review" />
-        <StatTile loading={L} icon="support_agent" tone="green" label="Support chats" value={q.supportChats ?? 0} to="/admin/support-chat" />
-      </div>
-      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Section title="Logins">
-          <div className="grid grid-cols-3 gap-2 text-center text-sm">
-            {[['Attempts', logins.data?.totalAttempts], ['Successful', logins.data?.successful], ['Failed', logins.data?.failed]].map(([k, v]) => (
-              <div key={k}>
-                <p className="text-xl font-bold text-brand-dark">{formatNumber(v ?? 0)}</p>
-                <p className="text-xs text-brand-gray-muted">{k}</p>
-              </div>
-            ))}
-          </div>
-        </Section>
-        <Section title="E-mail delivery">
-          <div className="grid grid-cols-3 gap-2 text-center text-sm">
-            {[['Sent', messaging.data?.emails?.sent], ['Failed', messaging.data?.emails?.failed], ['Queued', messaging.data?.emails?.queued]].map(([k, v]) => (
-              <div key={k}>
-                <p className="text-xl font-bold text-brand-dark">{formatNumber(v ?? 0)}</p>
-                <p className="text-xs text-brand-gray-muted">{k}</p>
-              </div>
-            ))}
-          </div>
-        </Section>
-      </div>
     </div>
   );
 };
@@ -148,140 +96,38 @@ export const AdminAnalytics = () => {
   );
 };
 
-export const CandidateDetail = () => {
-  const { id } = useParams();
-  useDocumentTitle('Candidate');
-  const query = useQuery({ queryKey: ['admin', 'candidate', id], queryFn: () => adminApi.get(`/candidates/${id}`) });
-  const link = useAction((type) => adminApi.post(`/users/${id}/send-link`, { type }), { success: 'Link sent' });
-  if (query.isPending) return <PageLoader />;
-  if (query.isError) return <ErrorState error={query.error} onRetry={query.refetch} />;
-  const { user = {}, profile = {}, applications = [] } = query.data;
+/** PRD Employer Actions: "Duplicate Company" - a copy of the profile under a new owner login. */
+export const DuplicateEmployer = ({ org, onClose }) => {
+  const navigate = useNavigate();
+  const [form, setForm] = useState({ organizationName: `${org.name} (copy)`, fullName: '', email: '', mobile: '' });
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const save = useAction(() => adminApi.post(`/employers/${org._id}/duplicate`, form), {
+    success: 'Employer duplicated. An activation link was sent to the new owner',
+    onSuccess: (r) => {
+      onClose();
+      const id = r?.organization?._id || r?._id;
+      if (id) navigate(`/admin/employers/${id}`);
+    },
+  });
   return (
-    <div className="mx-auto max-w-4xl space-y-4">
-      <Link to="/admin/candidates" className="text-sm font-medium text-brand-blue">← Candidates</Link>
-      <Section>
-        <div className="flex flex-wrap items-center gap-4">
-          <Avatar name={user.fullName} src={user.avatar?.url} size={64} />
-          <div className="min-w-0 flex-1">
-            <h1 className="text-xl font-bold text-brand-dark">{user.fullName}</h1>
-            <p className="text-xs text-brand-gray-muted">{user.uid}</p>
-          </div>
-          <StatusBadge status={user.status} />
-        </div>
-        <dl className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <DetailRow label="Email" value={user.email} />
-          <DetailRow label="Mobile" value={user.mobile} />
-          <DetailRow label="Source" value={titleCase(user.source || '')} />
-          <DetailRow label="Experience" value={profile.experienceLevel} />
-          <DetailRow label="Headline" value={profile.resumeHeadline} />
-          <DetailRow label="Joined" value={formatDate(user.createdAt)} />
-        </dl>
-        <div className="mt-4 flex gap-2">
-          <Button size="sm" variant="outline" onClick={() => link.mutate('password_reset')}>
-            Send password reset
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => link.mutate('activation')}>
-            Send activation
-          </Button>
-        </div>
-      </Section>
-      <PlanAndWallet target={{ userId: id }} audience="candidate" />
-      <Section title="Applications">
-        <DataTable
-          columns={[
-            { key: 'job', header: 'Job', render: (a) => a.job?.title },
-            { key: 'stage', header: 'Stage', render: (a) => <StatusBadge status={a.stage} /> },
-            { key: 'date', header: 'Applied', render: (a) => formatDate(a.createdAt) },
-          ]}
-          rows={applications}
-          empty={<EmptyState title="No applications" />}
-        />
-      </Section>
-    </div>
-  );
-};
-
-export const EmployerDetail = () => {
-  const { id } = useParams();
-  useDocumentTitle('Employer');
-  const query = useQuery({ queryKey: ['admin', 'employer', id], queryFn: () => adminApi.get(`/employers/${id}`) });
-  const [credits, setCredits] = useState({ metric: 'job_post', amount: '', note: '' });
-  const grant = useAction(() => adminApi.post(`/employers/${id}/credits`, { credits: { [credits.metric]: Number(credits.amount) }, note: credits.note || 'Admin adjustment' }), { success: 'Credits updated', invalidate: ['admin'] });
-  const remind = useAction(() => adminApi.post('/employers/kyc-reminders', { ids: [id] }), { success: 'Reminder sent' });
-  const review = useAction(({ docId, status }) => adminApi.patch(`/employers/${id}/documents/${docId}`, { status }), { success: 'Document updated', invalidate: ['admin'] });
-  if (query.isPending) return <PageLoader />;
-  if (query.isError) return <ErrorState error={query.error} onRetry={query.refetch} />;
-  const org = query.data.organization || query.data;
-  const members = query.data.members || [];
-  return (
-    <div className="mx-auto max-w-4xl space-y-4">
-      <Link to="/admin/employers" className="text-sm font-medium text-brand-blue">← Employers</Link>
-      <Section>
-        <div className="flex flex-wrap items-center gap-4">
-          <Avatar name={org.name} src={org.logo?.url} size={64} square />
-          <div className="min-w-0 flex-1">
-            <h1 className="text-xl font-bold text-brand-dark">{org.name}</h1>
-            <p className="text-xs text-brand-gray-muted">{org.uid} · {titleCase(org.type || '')}</p>
-          </div>
-          <StatusBadge status={org.status} />
-          <StatusBadge status={org.kycStatus} />
-        </div>
-        <dl className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <DetailRow label="Website" value={org.website} />
-          <DetailRow label="GST" value={org.gstNumber} />
-          <DetailRow label="PAN" value={org.panNumber} />
-        </dl>
-      </Section>
-      <Section
-        title="KYC documents"
-        actions={
-          <Button size="sm" variant="outline" loading={remind.isPending} onClick={() => remind.mutate()}>
-            Send reminder
-          </Button>
-        }
-      >
-        <DataTable
-          columns={[
-            { key: 'type', header: 'Type' },
-            { key: 'number', header: 'Number', render: (d) => d.number || '—' },
-            { key: 'status', header: 'Status', render: (d) => <StatusBadge status={d.status} /> },
-            { key: 'file', header: 'File', render: (d) => (d.downloadUrl || d.url ? <a href={d.downloadUrl || d.url} target="_blank" rel="noopener noreferrer" className="text-brand-blue underline">Open</a> : '—') },
-          ]}
-          rows={org.documents || query.data.documents}
-          empty={<EmptyState title="No documents" />}
-          actions={(d) => (
-            <>
-              <Button size="sm" variant="ghost" onClick={() => review.mutate({ docId: d._id, status: 'verified' })}>
-                Verify
-              </Button>
-              <Button size="sm" variant="dangerGhost" onClick={() => review.mutate({ docId: d._id, status: 'rejected' })}>
-                Reject
-              </Button>
-            </>
-          )}
-        />
-      </Section>
-      <Section title="Team">
-        <ul className="divide-y divide-brand-border text-sm">
-          {members.map((m) => (
-            <li key={m._id} className="flex justify-between gap-2 py-2">
-              {m.fullName} <span className="text-xs text-brand-gray-muted">{m.email}</span>
-            </li>
-          ))}
-        </ul>
-      </Section>
-      <PlanAndWallet target={{ organizationId: id }} audience="employer" />
-      <Section title="Adjust credits">
-        <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-4">
-          <SelectField label="Credit" placeholder={null} options={['job_post', 'featured_job', 'resume_view', 'resume_download', 'invite', 'excel_download', 'resume_search'].map((v) => ({ value: v, label: titleCase(v) }))} value={credits.metric} onChange={(e) => setCredits((c) => ({ ...c, metric: e.target.value }))} />
-          <TextField label="Amount (+/-)" type="number" value={credits.amount} onChange={(e) => setCredits((c) => ({ ...c, amount: e.target.value }))} />
-          <TextField label="Note" value={credits.note} onChange={(e) => setCredits((c) => ({ ...c, note: e.target.value }))} />
-          <Button size="sm" variant="primaryBlue" disabled={!credits.amount} loading={grant.isPending} onClick={() => grant.mutate()}>
-            Apply
-          </Button>
-        </div>
-      </Section>
-    </div>
+    <Modal
+      open
+      onClose={onClose}
+      title="Duplicate company"
+      subtitle="Copies the profile, offices and settings. Jobs and users are not copied."
+      footer={
+        <Button size="sm" variant="primaryBlue" loading={save.isPending} disabled={!form.fullName || !form.email || !/^[6-9]\d{9}$/.test(form.mobile)} onClick={() => save.mutate()}>
+          Duplicate
+        </Button>
+      }
+    >
+      <div className="space-y-3">
+        <TextField label="New organization name" value={form.organizationName} onChange={set('organizationName')} />
+        <TextField label="Owner full name" required value={form.fullName} onChange={set('fullName')} />
+        <TextField label="Owner e-mail" required type="email" value={form.email} onChange={set('email')} />
+        <TextField label="Owner mobile" required inputMode="numeric" maxLength={10} value={form.mobile} onChange={(e) => setForm((f) => ({ ...f, mobile: e.target.value.replace(/\D/g, '') }))} />
+      </div>
+    </Modal>
   );
 };
 
@@ -512,10 +358,10 @@ export const SupportChat = () => {
 
 export const Communications = () => {
   useDocumentTitle('Bulk messages');
-  const blank = { audience: 'candidates', channels: ['email'], subject: '', message: '' };
+  const blank = { audience: 'candidates', channels: ['email'], subject: '', message: '', html: '' };
   const [form, setForm] = useState(blank);
   const [confirm, setConfirm] = useState(false);
-  const send = useAction(() => adminApi.post('/messages/bulk', form), {
+  const send = useAction(() => adminApi.post('/messages/bulk', { ...form, html: form.channels.includes('email') && form.html ? form.html : undefined }), {
     success: 'Messages queued',
     onSuccess: () => {
       setConfirm(false);
@@ -524,7 +370,7 @@ export const Communications = () => {
   });
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e?.target ? e.target.value : e }));
   return (
-    <div className="mx-auto max-w-2xl">
+    <div className="mx-auto max-w-3xl">
       <PageHeader title="Bulk Messages" subtitle="Send alerts to a group of users" />
       <Section>
         <div className="space-y-4">
@@ -533,7 +379,10 @@ export const Communications = () => {
             <ChoiceChips multiple options={['email', 'sms', 'whatsapp', 'in_app', 'push'].map((v) => ({ value: v, label: titleCase(v) }))} value={form.channels} onChange={set('channels')} />
           </Field>
           <TextField label="Subject" required value={form.subject} onChange={set('subject')} />
-          <TextAreaField label="Message" required rows={6} value={form.message} onChange={set('message')} />
+          <TextAreaField label="Short message" required rows={3} value={form.message} onChange={set('message')} hint="Used for SMS, WhatsApp, push and in-app. Keep it short and plain." maxLength={5000} />
+          {form.channels.includes('email') && (
+            <RichTextEditor label="E-mail content (formatted)" value={form.html} onChange={set('html')} minHeight={260} hint="Optional. Leave empty to e-mail the short message." />
+          )}
           <Button size="sm" variant="primary" disabled={!form.subject || !form.message || !form.channels.length} onClick={() => setConfirm(true)}>
             Review and send
           </Button>

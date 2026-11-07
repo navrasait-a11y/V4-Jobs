@@ -13,10 +13,10 @@ import {
   ResumeDetailsForm,
   ResumeForm,
   SocialForm,
+  useProfileApi,
 } from '../../components/candidate/ProfileForms';
 import useAuth from '../../hooks/useAuth';
 import { useAction, useCandidateProfile, useDocumentTitle } from '../../hooks/useData';
-import { candidateApi } from '../../services';
 import { formatCurrency, formatDate, monthsToExperience, placeLabel } from '../../utils/format';
 
 const Tags = ({ items, empty = 'Not added yet' }) =>
@@ -49,13 +49,16 @@ const EDITORS = {
 
 const SECTION_LINKS = { photo: 'top', basic: 'personal', contact: 'personal', personal: 'personal', resume: 'resume', headline: 'resume', skills: 'resume', employment: 'work', education: 'education', preferences: 'preferences', languages: 'personal' };
 
-const Profile = () => {
-  useDocumentTitle('My profile');
-  const { user, loadMe } = useAuth();
-  const query = useCandidateProfile();
+/**
+ * The whole profile with section editors. Used by the candidate (own profile) and by the admin panel
+ * (any candidate) - the admin wraps it in ProfileApiContext so every save goes to the admin API.
+ */
+export const ProfileView = ({ query, onChanged = () => {} }) => {
+  const { user } = useAuth();
+  const { api, invalidate } = useProfileApi();
   const [editing, setEditing] = useState(null);
   const avatarRef = useRef(null);
-  const avatar = useAction(candidateApi.uploadAvatar, { success: 'Photo updated', invalidate: ['candidate-me'], onSuccess: loadMe });
+  const avatar = useAction(api.uploadAvatar, { success: 'Photo updated', invalidate, onSuccess: onChanged });
   if (query.isPending) return <PageLoader />;
   if (query.isError) return <ErrorState error={query.error} onRetry={query.refetch} />;
   const { profile = {}, completion = {} } = query.data;
@@ -63,7 +66,7 @@ const Profile = () => {
   const pref = profile.preferences || {};
   const close = () => {
     setEditing(null);
-    loadMe();
+    onChanged();
   };
   const edit = (key, label = 'Edit') => (
     <Button size="sm" variant="ghost" onClick={() => setEditing(key)}>
@@ -313,6 +316,13 @@ export const CompleteProfile = () => {
       </Section>
     </div>
   );
+};
+
+const Profile = () => {
+  useDocumentTitle('My profile');
+  const { loadMe } = useAuth();
+  const query = useCandidateProfile();
+  return <ProfileView query={query} onChanged={loadMe} />;
 };
 
 export default Profile;

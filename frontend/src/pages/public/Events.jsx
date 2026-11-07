@@ -5,13 +5,14 @@ import ApplyModal from '../../components/candidate/ApplyModal';
 import Button from '../../components/ui/Button';
 import { Badge, Pagination, Section } from '../../components/ui/data';
 import { CardSkeleton, EmptyState, ErrorState, Icon, PageLoader } from '../../components/ui/feedback';
-import { useAction, useDocumentTitle, useUrlFilters } from '../../hooks/useData';
+import { useAction, useUrlFilters } from '../../hooks/useData';
 import { eventApi } from '../../services';
 import useAuthStore from '../../store/useAuthStore';
 import { formatDateTime, formatExperience, formatLocations, titleCase } from '../../utils/format';
+import useSeo from '../../hooks/useSeo';
 
 export const Events = () => {
-  useDocumentTitle('Job events');
+  useSeo({ title: 'Job fairs and walk-in drives', description: 'Upcoming job fairs, hiring events and walk-in drives. Apply to many jobs in one event.', path: '/events' });
   const [filters, setFilters] = useUrlFilters({ page: '1' });
   const params = { limit: 12, ...filters };
   const query = useQuery({ queryKey: ['events', params], queryFn: () => eventApi.list(params) });
@@ -54,7 +55,26 @@ export const EventDetails = () => {
   const [guestJob, setGuestJob] = useState(null);
   const query = useQuery({ queryKey: ['event', slug], queryFn: () => eventApi.get(slug) });
   const event = query.data?.event || query.data;
-  useDocumentTitle(event?.title);
+  useSeo({
+    title: event?.title,
+    description: event ? `${event.title}${event.venue?.city ? ` in ${event.venue.city}` : ''}. ${String(event.description || '').slice(0, 120)}` : undefined,
+    image: event?.banner?.url,
+    jsonLd: event
+      ? {
+          '@context': 'https://schema.org',
+          '@type': 'Event',
+          name: event.title,
+          startDate: event.startAt,
+          endDate: event.endAt,
+          description: String(event.description || '').slice(0, 300) || undefined,
+          image: event.banner?.url ? [event.banner.url] : undefined,
+          eventAttendanceMode: event.venue?.address ? 'https://schema.org/OfflineEventAttendanceMode' : 'https://schema.org/OnlineEventAttendanceMode',
+          location: event.venue?.address
+            ? { '@type': 'Place', name: event.venue.address, address: [event.venue.address, event.venue.city, event.venue.state].filter(Boolean).join(', ') }
+            : { '@type': 'VirtualLocation', url: window.location.href },
+        }
+      : undefined,
+  });
   const apply = useAction(() => eventApi.apply(slug, selected), {
     success: 'Applied to the selected jobs',
     invalidate: ['applications'],

@@ -18,7 +18,8 @@ before(async () => {
     let raw = '';
     req.on('data', (c) => (raw += c));
     req.on('end', () => {
-      const call = { method: req.method, url: req.url, headers: req.headers, body: raw ? JSON.parse(raw) : null };
+      const form = /x-www-form-urlencoded/.test(req.headers['content-type'] || '');
+      const call = { method: req.method, url: req.url, headers: req.headers, body: !raw ? null : form ? Object.fromEntries(new URLSearchParams(raw)) : JSON.parse(raw) };
       calls.push(call);
       const r = nextResponse;
       nextResponse = null;
@@ -60,6 +61,7 @@ before(async () => {
     APITXT_ROUTE: '4',
     APITXT_TEMPLATE_OTP: '1707160000000000001',
     APITXT_TEMPLATE_INTERVIEW: '',
+    APITXT_OTP_MODE: 'dlt', // the DLT tests below; the Unified OTP API has its own test
   });
   const { connectDatabase } = await import('../src/config/database.js');
   await connectDatabase();
@@ -176,12 +178,37 @@ test('APITXT: business error and missing template are permanent failures', async
   await assert.rejects(deliverSms({ to: '9876533333', template: 'otp', vars: { otp: '1', minutes: 5 } }), (err) => err.retryable === true);
 });
 
-test('APITXT: managed OTP API client', async () => {
+test('APITXT: Unified OTP API (form-urlencoded, template optional)', async () => {
+  const config = (await import('../src/config/env.js')).default;
   const { sendApitxtOtp } = await import('../src/shared/services/providers/apitxt.js');
   calls.length = 0;
-  const r = await sendApitxtOtp({ to: '9876543210', otp: '4521' });
+  const r = await sendApitxtOtp({ to: '+91 98765 43210', otp: '4521' });
   assert.equal(r.providerId, 'SMS-OTP-1');
-  assert.deepEqual(calls[0].body, { authkey: 'auth-key-1', mobile: '919876543210', otp: '4521', channel: 'sms' });
+  assert.equal(calls[0].url, '/api/sendOTP');
+  assert.match(calls[0].headers['content-type'], /x-www-form-urlencoded/);
+  assert.deepEqual(calls[0].body, { authkey: 'auth-key-1', mobile: '919876543210', otp: '4521', channel: 'sms' }, 'no template_id until one is configured');
+
+  config.sms.apitxt.otpTemplateId = '42';
+  config.sms.apitxt.otpTemplateName = 'fjw_otp';
+  await sendApitxtOtp({ to: '9876543210', otp: '1111' });
+  assert.equal(calls[1].body.template_id, '42');
+  await sendApitxtOtp({ to: '9876543210', otp: '2222', channel: 'whatsapp' });
+  assert.equal(calls[2].body.template_name, 'fjw_otp');
+  assert.equal(calls[2].body.template_id, undefined, 'template_id is SMS only');
+  config.sms.apitxt.otpTemplateId = '';
+  config.sms.apitxt.otpTemplateName = '';
+
+  nextResponse = { status: 200, body: { status: 'error', message: 'Insufficient balance' } };
+  await assert.rejects(sendApitxtOtp({ to: '9876543210', otp: '3333' }), (err) => err.retryable === false && /Insufficient balance/.test(err.message));
+
+  // deliverSms routes OTPs to sendOTP in otp_api mode, even without any DLT ids
+  const { deliverSms } = await import('../src/shared/services/channels.js');
+  config.sms.apitxt.otpMode = 'otp_api';
+  calls.length = 0;
+  await deliverSms({ to: '9876544444', template: 'otp', vars: { otp: '777888', minutes: 10 } });
+  assert.equal(calls[0].url, '/api/sendOTP');
+  assert.equal(calls[0].body.otp, '777888');
+  config.sms.apitxt.otpMode = 'dlt';
 });
 
 test('SMS template text override from admin settings', async () => {

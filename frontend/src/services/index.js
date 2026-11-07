@@ -96,6 +96,9 @@ export const jobApi = {
   guestPostOtp: (mobile) => post('/jobs/guest-post/otp', { mobile }),
   guestPost: (body) => post('/jobs/guest-post', body),
   requestCallback: (id) => post(`/jobs/${id}/callback`),
+  searches: () => get('/jobs/searches'),
+  saveSearch: (body) => post('/jobs/searches', body),
+  removeSearch: (id) => del(`/jobs/searches/${id}`),
 };
 
 export const applicationApi = {

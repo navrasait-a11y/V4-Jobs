@@ -28,10 +28,13 @@ const cleanHtml = (html) =>
     allowedAttributes: {
       ...sanitizeHtml.defaults.allowedAttributes,
       '*': ['style', 'class'],
-      img: ['src', 'alt', 'width', 'height'],
+      img: ['src', 'alt', 'width', 'height', 'title'],
+      a: ['href', 'name', 'target', 'rel', 'title'],
+      td: ['colspan', 'rowspan', 'colwidth'],
+      th: ['colspan', 'rowspan', 'colwidth'],
       iframe: ['src', 'width', 'height', 'allowfullscreen'],
     },
-    allowedIframeHostnames: ['www.youtube.com', 'player.vimeo.com'],
+    allowedIframeHostnames: ['www.youtube.com', 'www.youtube-nocookie.com', 'player.vimeo.com'],
   });
 
 const seo = Joi.object({
@@ -311,7 +314,13 @@ mount(
 mount(
   '/faqs',
   Faq,
-  { name: 'Faq', searchFields: ['question'], filterFields: ['category', 'audience', 'isActive'], defaultSort: 'order' },
+  {
+    name: 'Faq',
+    searchFields: ['question'],
+    filterFields: ['category', 'audience', 'isActive'],
+    defaultSort: 'order',
+    transform: (b) => ({ ...b, ...(b.answer !== undefined ? { answer: cleanHtml(b.answer) } : {}) }),
+  },
   Joi.object({
     question: Joi.string().max(500).required(),
     answer: Joi.string().max(10000).required(),

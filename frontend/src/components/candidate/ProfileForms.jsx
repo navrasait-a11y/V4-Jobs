@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Button from '../ui/Button';
 import { Alert, ConfirmDialog, Icon, Modal } from '../ui/feedback';
@@ -16,7 +16,12 @@ import { DISTANCE_OPTIONS } from '../../utils/options';
  * "Required Forms" Excel (Candidate Profile sheet); every dropdown reads admin-managed master data.
  */
 
-const invalidate = ['candidate-me', 'candidate-dashboard'];
+/**
+ * Which profile the forms edit. Default: the signed-in candidate. The admin panel provides the same
+ * API shape bound to /admin/candidates/:id/profile, so every form works for any candidate.
+ */
+export const ProfileApiContext = createContext({ api: candidateApi, invalidate: ['candidate-me', 'candidate-dashboard'] });
+export const useProfileApi = () => useContext(ProfileApiContext);
 const adultMax = new Date(new Date().getFullYear() - 14, 11, 31);
 const USERNAME = /^(?!_)[A-Za-z0-9_]{3,30}(?<!_)$/;
 const WORD_LIMIT = 4000;
@@ -30,7 +35,10 @@ const clean = (obj) => Object.fromEntries(Object.entries(obj).filter(([, v]) => 
 const numberOrUndefined = (v) => (v === '' || v === null || v === undefined ? undefined : Number(v));
 const words = (text = '') => (text.trim() ? text.trim().split(/\s+/).length : 0);
 const withScheme = (url = '') => (url && !/^https?:\/\//i.test(url) ? `https://${url.trim()}` : url.trim());
-const useSave = (onDone) => useAction(candidateApi.update, { success: 'Saved', invalidate, onSuccess: onDone });
+const useSave = (onDone) => {
+  const { api, invalidate } = useProfileApi();
+  return useAction(api.update, { success: 'Saved', invalidate, onSuccess: onDone });
+};
 
 const SaveBar = ({ pending, label = 'Save', onCancel }) => (
   <div className="flex justify-end gap-2 border-t border-brand-border pt-4">
@@ -249,12 +257,13 @@ export const PersonalForm = ({ data, onDone, onCancel, settingsPath = '/candidat
 /* -------------------------------------------------------------- resume */
 
 export const ResumeForm = ({ data }) => {
+  const { api, invalidate } = useProfileApi();
   const resume = data.profile?.resume;
   const [parsed, setParsed] = useState(null);
-  const upload = useAction(candidateApi.uploadResume, { success: 'Resume uploaded', invalidate, onSuccess: (r) => setParsed(r.parsed) });
-  const remove = useAction(candidateApi.deleteResume, { success: 'Resume removed', invalidate });
-  const addSkills = useAction((skills) => candidateApi.update({ keySkills: [...new Set([...(data.profile?.keySkills || []), ...skills])].slice(0, 15) }), { success: 'Skills added', invalidate, onSuccess: () => setParsed(null) });
-  const download = useAction(candidateApi.resumeLink, { onSuccess: (r) => window.open(r.url, '_blank', 'noopener') });
+  const upload = useAction(api.uploadResume, { success: 'Resume uploaded', invalidate, onSuccess: (r) => setParsed(r.parsed) });
+  const remove = useAction(api.deleteResume, { success: 'Resume removed', invalidate });
+  const addSkills = useAction((skills) => api.update({ keySkills: [...new Set([...(data.profile?.keySkills || []), ...skills])].slice(0, 15) }), { success: 'Skills added', invalidate, onSuccess: () => setParsed(null) });
+  const download = useAction(api.resumeLink, { onSuccess: (r) => window.open(r.url, '_blank', 'noopener') });
   const [confirm, setConfirm] = useState(false);
   return (
     <div className="space-y-3">
@@ -343,6 +352,7 @@ export const ExperienceSummaryForm = ({ data, onDone, onCancel }) => {
 };
 
 const EmploymentModal = ({ item, onClose }) => {
+  const { api, invalidate } = useProfileApi();
   const lookups = useLookups('employer_type', 'employment_type', 'job_mode', 'shift', 'salary_type', 'notice_period');
   const [form, set, setForm] = useForm({
     jobTitle: item?.jobTitle || '',
@@ -379,7 +389,7 @@ const EmploymentModal = ({ item, onClose }) => {
         noticePeriod: form.isCurrent ? form.noticePeriod : undefined,
         monthlySalary: numberOrUndefined(form.monthlySalary),
       });
-      return item ? candidateApi.updateItem('employments', item._id, body) : candidateApi.addItem('employments', body);
+      return item ? api.updateItem('employments', item._id, body) : api.addItem('employments', body);
     },
     { success: 'Work experience saved', invalidate, onSuccess: onClose },
   );
@@ -487,6 +497,7 @@ export const MarksField = ({ type, value, onChange }) => {
 };
 
 const EducationModal = ({ item, onClose }) => {
+  const { api, invalidate } = useProfileApi();
   const lookups = useLookups('education_level', 'education_status', 'education_type', 'education_medium', 'marks_type');
   const [form, set, setForm] = useForm({
     level: item?.level || '',
@@ -509,7 +520,7 @@ const EducationModal = ({ item, onClose }) => {
   const save = useAction(
     () => {
       const body = clean({ ...form, startDate: form.startDate && `${form.startDate}-01`, endDate: form.endDate && `${form.endDate}-01` });
-      return item ? candidateApi.updateItem('educations', item._id, body) : candidateApi.addItem('educations', body);
+      return item ? api.updateItem('educations', item._id, body) : api.addItem('educations', body);
     },
     { success: 'Education saved', invalidate, onSuccess: onClose },
   );
@@ -592,9 +603,10 @@ export const CertificationsForm = ({ data, onDone, onCancel }) => {
 
 /** Add, edit and delete rows for `employments` or `educations`. */
 export const ItemList = ({ kind, items = [] }) => {
+  const { api, invalidate } = useProfileApi();
   const [editing, setEditing] = useState(null);
   const [removeId, setRemoveId] = useState(null);
-  const remove = useAction((id) => candidateApi.removeItem(kind, id), { success: 'Removed', invalidate, onSuccess: () => setRemoveId(null) });
+  const remove = useAction((id) => api.removeItem(kind, id), { success: 'Removed', invalidate, onSuccess: () => setRemoveId(null) });
   const FormModal = kind === 'employments' ? EmploymentModal : EducationModal;
   const isWork = kind === 'employments';
   const period = (i) => [formatDate(i.startDate, 'MMM yyyy'), i.isCurrent ? 'Present' : formatDate(i.endDate, 'MMM yyyy')].filter((x) => x && x !== '—').join(' - ');

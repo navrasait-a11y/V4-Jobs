@@ -4,8 +4,10 @@ import { ProviderError, isRetryableStatus, request } from './http.js';
 /**
  * APITxT SMS gateway (https://apitxt.com).
  *  - DLT SMS : POST {base}/api/sendMsg  { authkey, mobiles, message, sender, route, template_id, pe_id }
- *  - OTP API : POST {base}/api/sendOTP  { authkey, mobile, otp, channel }   (no DLT template needed)
- * Both use JSON + "Authorization: Bearer <api key>".
+ *  - OTP API : POST {base}/api/sendOTP  form-urlencoded { authkey, mobile, otp, channel, template_id?, template_name? }
+ *              "Unified OTP API": without template_id the apitxt system default config is used, so no DLT
+ *              template is needed. Max 3 OTPs per mobile per minute (our resend cooldown stays below that).
+ * sendMsg uses JSON + "Authorization: Bearer <api key>".
  * Success: sendMsg -> { status: 200, message: "success", request_id }
  *          sendOTP -> { status: "success", message, data: { request_id } }
  */
@@ -70,16 +72,19 @@ export async function sendApitxtSms({ to, message, templateId }) {
   return { providerId: requestId(res.body) };
 }
 
-/** OTP delivered through APITxT's managed OTP route (APITXT_OTP_MODE=otp_api). */
-export async function sendApitxtOtp({ to, otp }) {
+/**
+ * OTP through the Unified OTP API (APITXT_OTP_MODE=otp_api). `template_id` (SMS) / `template_name`
+ * (WhatsApp) are sent only when configured; otherwise apitxt uses its default OTP configuration.
+ */
+export async function sendApitxtOtp({ to, otp, channel }) {
   const c = assertConfigured();
   const mobile = tenDigits(to);
   if (mobile.length !== 10) throw new ProviderError('apitxt', 'invalid mobile number', { retryable: false });
-  const res = await request('apitxt', `${c.baseUrl}/api/sendOTP`, {
-    headers: { authorization: `Bearer ${c.apiKey}` },
-    json: { authkey: c.authKey, mobile: `91${mobile}`, otp: String(otp), channel: 'sms' },
-    timeoutMs: config.sms.timeoutMs,
-  });
+  const ch = channel || c.otpChannel || 'sms';
+  const form = { authkey: c.authKey, mobile: `91${mobile}`, otp: String(otp), channel: ch };
+  if (ch === 'sms' && c.otpTemplateId) form.template_id = String(c.otpTemplateId);
+  if (ch === 'whatsapp' && c.otpTemplateName) form.template_name = c.otpTemplateName;
+  const res = await request('apitxt', `${c.baseUrl}/api/sendOTP`, { form, timeoutMs: config.sms.timeoutMs });
   if (!isSuccess(res)) throw fail(res, 'sendOTP');
   return { providerId: requestId(res.body) };
 }

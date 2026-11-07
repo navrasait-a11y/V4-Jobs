@@ -1,4 +1,5 @@
 import logger from '../../config/logger.js';
+import config from '../../config/env.js';
 import { enqueue, enqueueBulk, registerJob } from '../../shared/services/queue.service.js';
 import { deliverEmail, deliverSms, deliverWhatsapp, deliverPush, deliverArattai } from '../../shared/services/channels.js';
 import { escapeHtml, htmlToText, layout, renderEmail } from '../../shared/services/emailTemplates.js';
@@ -13,12 +14,45 @@ registerJob('email.send', (data) => deliverEmail(data));
 registerJob('sms.send', (data) => deliverSms(data));
 registerJob('whatsapp.send', (data) => deliverWhatsapp(data));
 registerJob('arattai.send', (data) => deliverArattai(data));
+/** Website page a push opens (same mapping as the web app's notification list). */
+export function webLink(data = {}, role) {
+  const employer = role === 'employer';
+  switch (data.screen) {
+    case 'job':
+      return `/jobs/${data.slug || data.jobId}`;
+    case 'application':
+      return employer ? `/employer/applications/${data.applicationId}` : '/candidate/applications';
+    case 'interview':
+      return employer ? '/employer/interviews' : '/candidate/interviews';
+    case 'chat':
+      return employer ? '/employer/messages' : '/candidate/messages';
+    case 'job_alert':
+      return '/candidate/job-alerts';
+    case 'billing':
+      return employer ? '/employer/packages-billing' : '/candidate/billing';
+    case 'mailbox':
+      return employer ? '/employer/mailbox' : '/candidate/mailbox';
+    case 'employer_job':
+    case 'job_callbacks':
+      return data.jobId ? `/employer/jobs?callbacks=${data.jobId}` : '/employer/jobs';
+    case 'kyc':
+      return '/employer/settings?tab=verification';
+    case 'enquiries':
+      return '/employer/enquiries';
+    default:
+      return employer ? '/employer/notifications' : '/candidate/notifications';
+  }
+}
+
 registerJob('push.send', async ({ userId, title, body, data, image }) => {
   const sessions = await Session.find({ user: userId, revokedAt: null, fcmToken: { $exists: true, $ne: null } })
     .select('fcmToken')
     .lean();
   const tokens = [...new Set(sessions.map((s) => s.fcmToken))];
-  const invalid = await deliverPush({ tokens, title, body, data, image });
+  if (!tokens.length) return;
+  const user = await User.findById(userId).select('role').lean();
+  const link = `${config.urls.web}${webLink(data, user?.role)}`;
+  const invalid = await deliverPush({ tokens, title, body, data: { ...data, link }, image, link });
   if (invalid.length) await Session.updateMany({ fcmToken: { $in: invalid } }, { $unset: { fcmToken: 1 } });
 });
 

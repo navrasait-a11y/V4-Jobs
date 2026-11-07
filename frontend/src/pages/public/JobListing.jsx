@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import AdSlot from '../../components/common/AdSlot';
@@ -7,13 +7,15 @@ import JobCard from '../../components/common/JobCard';
 import JobSearchInput from '../../components/common/JobSearchInput';
 import Button from '../../components/ui/Button';
 import { Pagination, SimpleSelect } from '../../components/ui/data';
-import { CardSkeleton, Drawer, EmptyState, ErrorState, Icon } from '../../components/ui/feedback';
-import { SuggestField } from '../../components/ui/form';
-import { useDocumentTitle, useLookups, useUrlFilters } from '../../hooks/useData';
+import { CardSkeleton, Drawer, EmptyState, ErrorState, Icon, Modal } from '../../components/ui/feedback';
+import { SuggestField, TextField } from '../../components/ui/form';
+import { useAction, useLookups, useUrlFilters } from '../../hooks/useData';
+import useAuthStore from '../../store/useAuthStore';
 import { jobApi } from '../../services';
 import { formatNumber } from '../../utils/format';
 import { DATE_POSTED_OPTIONS, DISTANCE_OPTIONS, EMPLOYER_TYPE_OPTIONS, EXPERIENCE_OPTIONS, JOB_SORT_OPTIONS, STIPEND_OPTIONS, monthsToYears } from '../../utils/options';
 import { rememberSearch } from '../../utils/recentSearches';
+import useSeo from '../../hooks/useSeo';
 
 /**
  * Job search ("Other Forms" Excel: Job Search Bar + Side Filters). Multi-value filters live in the URL
@@ -238,11 +240,56 @@ const Filters = ({ filters, setFilters, facets, lookups }) => {
   );
 };
 
+/** PRD "Save Job Search" (candidates). Guests are sent to log in first. */
+const SaveSearchButton = ({ filters, defaultName }) => {
+  const user = useAuthStore((s) => s.user);
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const save = useAction(
+    () => {
+      const { page: _p, limit: _l, ...rest } = filters;
+      return jobApi.saveSearch({ name: name.trim(), query: new URLSearchParams(rest).toString() });
+    },
+    { success: 'Search saved. Find it under Saved Jobs', invalidate: ['job-searches'], onSuccess: () => setOpen(false) },
+  );
+  if (user && user.role !== 'candidate') return null;
+  return (
+    <>
+      <Button
+        size="sm"
+        variant="outline"
+        leftIcon={<Icon name="bookmark_add" size={16} />}
+        onClick={() => {
+          if (!user) return navigate('/login', { state: { from: `/jobs${window.location.search}` } });
+          setName(defaultName || 'My job search');
+          return setOpen(true);
+        }}
+      >
+        Save search
+      </Button>
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Save this search"
+        size="sm"
+        footer={
+          <Button size="sm" variant="primaryBlue" disabled={name.trim().length < 2} loading={save.isPending} onClick={() => save.mutate()}>
+            Save
+          </Button>
+        }
+      >
+        <TextField label="Name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} />
+      </Modal>
+    </>
+  );
+};
+
 /** "10 Filters Applied (Reset)": every applied filter in one box. */
 const AppliedFilters = ({ filters, setFilters, onReset }) => {
   const items = [];
   for (const [k, v] of Object.entries(filters)) {
-    if (['page', 'sort', 'allMandatory', 'mandatory'].includes(k) || v === '') continue;
+    if (['page', 'sort', 'limit', 'allMandatory', 'mandatory'].includes(k) || v === '') continue;
     if (LIST_KEYS.includes(k)) {
       for (const x of split(v)) items.push({ k, v: x, label: k === 'postedBy' ? optLabel(EMPLOYER_TYPE_OPTIONS, x) : x });
     } else {
@@ -304,8 +351,14 @@ const AppliedFilters = ({ filters, setFilters, onReset }) => {
 };
 
 const JobListing = () => {
-  useDocumentTitle('Search jobs');
   const [filters, setFilters] = useUrlFilters({ page: '1' });
+  const seoWhat = [filters.q, ...split(filters.keywords)].filter(Boolean).slice(0, 2).join(', ');
+  const seoWhere = split(filters.location).slice(0, 2).join(', ');
+  useSeo({
+    title: `${seoWhat ? `${seoWhat} jobs` : filters.kind === 'internship' ? 'Internships' : 'Jobs'}${seoWhere ? ` in ${seoWhere}` : ''}`,
+    description: `Browse the latest ${seoWhat || ''} ${filters.kind === 'internship' ? 'internships' : 'jobs'}${seoWhere ? ` in ${seoWhere}` : ' across India'} on Freejobwala. Filter by salary, experience, work mode and more.`,
+    path: `/jobs${seoWhat || seoWhere ? `?${new URLSearchParams({ ...(filters.keywords ? { keywords: filters.keywords } : {}), ...(filters.location ? { location: filters.location } : {}) })}` : ''}`,
+  });
   const lookups = useLookups('top_company', 'experience_level', 'employer_type', 'company_size', 'employment_type', 'shift', 'job_mode', 'notice_period', 'education_level');
   const [drawer, setDrawer] = useState(false);
   const [q, setQ] = useState('');
@@ -347,7 +400,7 @@ const JobListing = () => {
   const { page: _page, sort: _sort, limit: _limit, ...facetParams } = params;
   const facets = useQuery({ queryKey: ['job-facets', facetParams], queryFn: () => jobApi.facets(facetParams), placeholderData: keepPreviousData });
   const total = jobs.data?.meta?.total ?? 0;
-  const active = Object.keys(filters).filter((k) => !['page', 'sort'].includes(k) && filters[k] !== '').length;
+  const active = Object.keys(filters).filter((k) => !['page', 'sort', 'limit'].includes(k) && filters[k] !== '').length;
 
   return (
     <div className="bg-brand-tint">
@@ -394,6 +447,7 @@ const JobListing = () => {
               <Button variant="outline" size="sm" className="lg:hidden" onClick={() => setDrawer(true)} leftIcon={<Icon name="tune" size={16} />}>
                 Filters{active ? ` (${active})` : ''}
               </Button>
+              <SaveSearchButton filters={filters} defaultName={[seoWhat, seoWhere].filter(Boolean).join(' in ')} />
               <SimpleSelect ariaLabel="Sort by" value={filters.sort || 'relevance'} onChange={(v) => setFilters({ sort: v })} options={JOB_SORT_OPTIONS} />
             </div>
           </div>
@@ -424,6 +478,8 @@ const JobListing = () => {
               setFilters({ page });
               window.scrollTo(0, 0);
             }}
+            limit={filters.limit}
+            onLimit={(limit) => setFilters({ limit })}
           />
         </div>
       </div>

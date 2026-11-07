@@ -4,9 +4,10 @@ import Button from '../../components/ui/Button';
 import { SearchInput, Tabs } from '../../components/ui/data';
 import { EmptyState, Icon, Skeleton } from '../../components/ui/feedback';
 import { MobileField, TextAreaField, TextField } from '../../components/ui/form';
-import { useAction, useDocumentTitle, usePublicSettings } from '../../hooks/useData';
+import { useAction, usePublicSettings } from '../../hooks/useData';
 import { cmsApi } from '../../services';
 import useAuthStore from '../../store/useAuthStore';
+import useSeo from '../../hooks/useSeo';
 
 const Faq = ({ item }) => {
   const [open, setOpen] = useState(false);
@@ -50,12 +51,19 @@ const ContactForm = () => {
 };
 
 const HelpCenter = () => {
-  useDocumentTitle('Help centre');
   const [audience, setAudience] = useState('candidate');
   const [q, setQ] = useState('');
   const settings = usePublicSettings();
   const { data, isPending } = useQuery({ queryKey: ['faqs', audience], queryFn: () => cmsApi.faqs({ audience }) });
   const faqs = (Array.isArray(data) ? data : data?.items || []).filter((f) => f.question.toLowerCase().includes(q.toLowerCase()));
+  useSeo({
+    title: 'Help centre and FAQs',
+    description: 'Answers to common questions about jobs, applications, employer accounts, payments and safety on Freejobwala.',
+    path: '/help-center',
+    jsonLd: faqs.length
+      ? { '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: faqs.slice(0, 30).map((f) => ({ '@type': 'Question', name: f.question, acceptedAnswer: { '@type': 'Answer', text: ((html) => String(html || '').replace(/<[^>]+>/g, ' '))(f.answer).slice(0, 1000) } })) }
+      : undefined,
+  });
 
   return (
     <div className="bg-brand-tint">

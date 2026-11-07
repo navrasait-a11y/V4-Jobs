@@ -107,3 +107,10 @@ export function startWorker() {
 export async function closeQueue() {
   await Promise.allSettled([worker?.close(), queue?.close()]);
 }
+
+/** Queue depth for the admin health panel (null when the in-process fallback is used). */
+export async function queueStats() {
+  const q = getQueue();
+  if (!q || producer?.status !== 'ready') return null;
+  return q.getJobCounts('waiting', 'active', 'delayed', 'failed');
+}

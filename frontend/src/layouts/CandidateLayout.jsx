@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import PanelLayout from '../components/shell/PanelLayout';
+import HeaderSearch from '../components/shell/HeaderSearch';
 import VerifyContactBanner from '../components/shell/VerifyContactBanner';
 import { Avatar, ProgressBar } from '../components/ui/data';
 import { Icon } from '../components/ui/feedback';
@@ -64,6 +65,7 @@ const CandidateLayout = () => (
     sidebarHeader={<SidebarHeader />}
     sidebarFooter={<SidebarFooter />}
     banner={<VerifyContactBanner />}
+    topExtra={<HeaderSearch role="candidate" />}
     profileMenu={profileMenu}
     subtitle="Jobseeker"
     messagesPath="/candidate/messages"

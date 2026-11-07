@@ -7,11 +7,12 @@ import JobSearchInput from '../../components/common/JobSearchInput';
 import JobCard from '../../components/common/JobCard';
 import { CardSkeleton, Icon } from '../../components/ui/feedback';
 import { Select } from '../../components/ui/pickers';
-import { useAction, useDocumentTitle } from '../../hooks/useData';
+import { useAction } from '../../hooks/useData';
 import useAuthStore from '../../store/useAuthStore';
 import { candidateApi, cmsApi, employerPublicApi, jobApi } from '../../services';
 import { formatNumber } from '../../utils/format';
 import { rememberSearch } from '../../utils/recentSearches';
+import useSeo from '../../hooks/useSeo';
 
 const toQuery = (obj) => new URLSearchParams(Object.entries(obj).filter(([, v]) => v !== '' && v !== undefined)).toString();
 
@@ -611,13 +612,24 @@ const CareerAdvicePreview = () => {
 };
 
 const Home = () => {
-  useDocumentTitle();
+  useSeo({
+    path: '/',
+    description: 'Search verified jobs, internships and walk-ins across India. Apply in one click, get job alerts, or post jobs and hire talent on Freejobwala.',
+    jsonLd: {
+      '@context': 'https://schema.org',
+      '@type': 'WebSite',
+      name: 'Freejobwala',
+      url: window.location.origin,
+      potentialAction: { '@type': 'SearchAction', target: `${window.location.origin}/jobs?keywords={search_term_string}`, 'query-input': 'required name=search_term_string' },
+    },
+  });
   return (
     <div className="flex w-full flex-col">
       <Hero />
       <ResumeUploadBanner />
       <PopularCategories />
       <AdSlot placement="home_top" className="mx-auto w-full max-w-[1100px] px-4 pt-6 sm:px-8" />
+      <AdSlot placement="home_middle" className="mx-auto w-full max-w-[1100px] px-4 pt-6 sm:px-8" />
       <LatestJobs />
       <FeaturedCompanies />
       <EmployerAndProBanners />

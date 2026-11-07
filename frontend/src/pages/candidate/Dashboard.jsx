@@ -9,6 +9,7 @@ import useAuth from '../../hooks/useAuth';
 import { useCandidateProfile, useDocumentTitle } from '../../hooks/useData';
 import { candidateApi, jobApi } from '../../services';
 import { STAGE_LABELS, formatDate } from '../../utils/format';
+import AdSlot from '../../components/common/AdSlot';
 
 const Dashboard = () => {
   useDocumentTitle('Dashboard');
@@ -25,6 +26,7 @@ const Dashboard = () => {
     <div>
       <h1 className="text-xl font-bold text-brand-dark">Welcome back, {user.fullName?.split(' ')[0]}</h1>
       <p className="mt-1 text-sm text-brand-gray">Here is what is happening with your job search.</p>
+      <AdSlot placement="dashboard" className="mt-4" />
 
       <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile loading={dash.isPending} icon="description" label="Applications" value={c.applied} to="/candidate/applications" />

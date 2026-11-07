@@ -10,7 +10,7 @@ import Organization from '../employers/organization.model.js';
 import User from '../users/user.model.js';
 import Candidate from '../candidates/candidate.model.js';
 import { Application } from '../applications/application.model.js';
-import { SavedJob, RecentSearch, CallbackRequest } from '../engagement/engagement.models.js';
+import { SavedJob, SavedSearch, RecentSearch, CallbackRequest } from '../engagement/engagement.models.js';
 import { notify } from '../notifications/notification.service.js';
 import { sendOtp, verifyOtp } from '../auth/otp.service.js';
 import { getSetting } from '../settings/settings.service.js';
@@ -21,6 +21,7 @@ import { createEmployerAccount } from '../users/account.service.js';
 import { sendActivation } from '../employers/employer.service.js';
 import { getWeights, scoreMatch } from '../matching/matching.service.js';
 import { buildJobSearch, jobSort, LIST_FIELDS } from './job.query.js';
+import { moneyRequestIn } from './job.screening.js';
 import { logActivity } from '../activity/activity.service.js';
 import { touchUsage, citiesWithin } from '../masterdata/masterdata.service.js';
 
@@ -176,6 +177,11 @@ export async function publishJob(user, jobId, { featured = false, skipCredits = 
   }
   const now = new Date();
   job.status = await publishStatus(org);
+  const moneyPhrase = isAdmin(user) ? null : moneyRequestIn(job);
+  if (moneyPhrase && job.status === JOB_STATUS.ACTIVE) {
+    job.status = JOB_STATUS.ADMIN_REVIEW;
+    job.statusReason = `Auto-flagged: mentions a fee to candidates ("${moneyPhrase.slice(0, 80)}")`;
+  }
   if (featured) {
     job.isFeatured = true;
     job.labels = [...new Set([...(job.labels || []), 'featured'])];
@@ -658,6 +664,32 @@ export async function jobsSitemap() {
     )
     .join('');
   return `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls}</urlset>`;
+}
+
+/* ------------------------------------------------- candidate saved searches */
+
+const MAX_SAVED_JOB_SEARCHES = 20;
+export const listJobSearches = (user) => SavedSearch.find({ owner: user._id, scope: 'job' }).sort({ updatedAt: -1 }).lean();
+
+export async function saveJobSearch(user, { name, query }) {
+  const clean = new URLSearchParams(query);
+  ['page', 'limit'].forEach((k) => clean.delete(k));
+  const filters = { query: clean.toString() };
+  const existing = await SavedSearch.findOne({ owner: user._id, scope: 'job', 'filters.query': filters.query });
+  if (existing) {
+    existing.name = name;
+    await existing.save();
+    return existing.toObject();
+  }
+  if ((await SavedSearch.countDocuments({ owner: user._id, scope: 'job' })) >= MAX_SAVED_JOB_SEARCHES) {
+    throw ApiError.badRequest(`You can save up to ${MAX_SAVED_JOB_SEARCHES} searches. Remove one first`, undefined, 'LIMIT_REACHED');
+  }
+  return (await SavedSearch.create({ owner: user._id, scope: 'job', name, filters })).toObject();
+}
+
+export async function removeJobSearch(user, id) {
+  await SavedSearch.deleteOne({ _id: id, owner: user._id, scope: 'job' });
+  return { removed: true };
 }
 
 /* -------------------------------------------------------------- scheduler */

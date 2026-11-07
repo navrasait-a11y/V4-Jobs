@@ -60,7 +60,7 @@ export const Applications = () => {
           </Button>
         )}
       />
-      <Pagination meta={query.data?.meta} onPage={(page) => setFilters({ page })} />
+      <Pagination meta={query.data?.meta} onPage={(page) => setFilters({ page })} limit={filters.limit} onLimit={(limit) => setFilters({ limit })} />
       <ConfirmDialog open={Boolean(withdrawId)} onClose={() => setWithdrawId(null)} title="Withdraw application?" message="The employer will no longer consider this application." danger confirmLabel="Withdraw" loading={withdraw.isPending} onConfirm={() => withdraw.mutate(withdrawId)} />
     </div>
   );

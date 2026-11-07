@@ -98,6 +98,25 @@ input:focus-visible, textarea:focus-visible, select:focus-visible, [contentedita
 .prose-content a { color: var(--color-brand-blue); text-decoration: underline; }
 .prose-content img { max-width: 100%; border-radius: 0.75rem; }
 .prose-content blockquote { border-left: 3px solid var(--color-brand-blue); padding-left: 1rem; color: var(--color-brand-dark); }
+.prose-content strong { color: var(--color-brand-dark); }
+.prose-content hr { border: 0; border-top: 1px solid var(--color-brand-border); margin: 1.5em 0; }
+.prose-content mark { background: #FFF2B3; color: inherit; padding: 0 0.15em; border-radius: 0.2em; }
+.prose-content code { background: var(--color-brand-tint); border-radius: 0.3em; padding: 0.1em 0.35em; font-size: 0.875em; }
+.prose-content pre { background: #0F1B2D; color: #E6EDF6; border-radius: 0.6rem; padding: 0.9rem 1rem; overflow-x: auto; }
+.prose-content pre code { background: none; padding: 0; color: inherit; }
+.prose-content table { width: 100%; border-collapse: collapse; margin: 1em 0; display: block; overflow-x: auto; }
+.prose-content th, .prose-content td { border: 1px solid var(--color-brand-border); padding: 0.5rem 0.75rem; text-align: left; vertical-align: top; min-width: 6rem; }
+.prose-content th { background: var(--color-brand-tint); color: var(--color-brand-dark); font-weight: 600; }
+.prose-content iframe { width: 100%; aspect-ratio: 16 / 9; height: auto; border-radius: 0.75rem; border: 0; }
+
+/* Admin rich-text editor (TipTap) */
+.rte .ProseMirror { min-height: 320px; padding: 1rem 1.1rem; outline: none; }
+.rte .ProseMirror p.is-editor-empty:first-child::before { content: attr(data-placeholder); float: left; height: 0; pointer-events: none; color: var(--color-brand-gray-muted); }
+.rte .ProseMirror img.ProseMirror-selectednode { outline: 3px solid var(--color-brand-blue); }
+.rte .ProseMirror .selectedCell { background: var(--color-brand-blue-tint); }
+.rte .ProseMirror table { table-layout: fixed; }
+.rte .ProseMirror .column-resize-handle { position: absolute; right: -2px; top: 0; bottom: 0; width: 4px; background: var(--color-brand-blue); pointer-events: none; }
+.rte .ProseMirror td, .rte .ProseMirror th { position: relative; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }

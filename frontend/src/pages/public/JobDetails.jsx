@@ -10,10 +10,12 @@ import ShareMenu from '../../components/common/ShareMenu';
 import Button from '../../components/ui/Button';
 import { Badge, DetailRow, Section } from '../../components/ui/data';
 import { Alert, EmptyState, ErrorState, Icon, PageLoader } from '../../components/ui/feedback';
-import { useAction, useDocumentTitle, usePublicSettings, useSaveJob } from '../../hooks/useData';
+import { useAction, usePublicSettings, useSaveJob } from '../../hooks/useData';
 import { jobApi } from '../../services';
 import useAuthStore from '../../store/useAuthStore';
 import { formatDate, formatExperience, formatLocations, formatSalary, timeAgo, titleCase } from '../../utils/format';
+import useSeo from '../../hooks/useSeo';
+import AdSlot from '../../components/common/AdSlot';
 
 const Text = ({ value }) => <div className="whitespace-pre-line text-sm leading-relaxed text-brand-gray">{value}</div>;
 /** Hides empty rows instead of a dash. */
@@ -120,7 +122,15 @@ const JobDetails = () => {
   const job = query.data?.job || query.data;
   const [saved, toggleSave] = useSaveJob(job);
   const similar = useQuery({ queryKey: ['job-similar', job?._id], queryFn: () => jobApi.similar(job._id), enabled: Boolean(job?._id) });
-  useDocumentTitle(job?.title);
+  const seoOrg = job?.consultancyClient?.name && !job?.consultancyClient?.hideName ? job.consultancyClient.name : job?.orgSnapshot?.name;
+  useSeo({
+    title: job ? `${job.title}${seoOrg ? ` at ${seoOrg}` : ''}${job.locations?.[0]?.city ? `, ${job.locations[0].city}` : ''}` : undefined,
+    description: job ? `${job.title} - ${[formatExperience(job), formatSalary(job), formatLocations(job, 3)].filter(Boolean).join(' · ')}. ${String(job.description || '').slice(0, 120)}` : undefined,
+    image: job?.orgSnapshot?.logo?.url || job?.orgSnapshot?.logo,
+    path: job ? `/jobs/${job.slug}` : undefined,
+    type: 'article',
+    noindex: job ? job.isOpen === false : false,
+  });
   useJsonLd(job?.slug, Boolean(settings.platform?.googleJobsEnabled && job?.googleJobsEnabled !== false));
 
   if (query.isPending) return <PageLoader />;
@@ -314,6 +324,7 @@ const JobDetails = () => {
         </div>
 
         <aside className="w-full shrink-0 space-y-4 lg:w-80">
+          <AdSlot placement="job_detail_sidebar" />
           <Section title="About the employer">
             <div className="flex items-center gap-3">
               <CompanyLogo name={snapshot.name} src={snapshot.logo?.url || snapshot.logo} size={44} />

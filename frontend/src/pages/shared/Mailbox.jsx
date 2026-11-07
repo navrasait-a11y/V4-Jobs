@@ -82,7 +82,7 @@ const Mailbox = () => {
           </button>
         ))}
       </div>
-      <Pagination meta={query.data?.meta} onPage={(page) => setFilters({ page })} />
+      <Pagination meta={query.data?.meta} onPage={(page) => setFilters({ page })} limit={filters.limit} onLimit={(limit) => setFilters({ limit })} />
       {openId && <MailDetail id={openId} onClose={() => setOpenId(null)} />}
     </div>
   );

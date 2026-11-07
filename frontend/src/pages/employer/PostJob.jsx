@@ -7,7 +7,7 @@ import JobPostForm, { JOB_BLANK, jobFormErrors, jobToForm, toJobPayload } from '
 import Button from '../../components/ui/Button';
 import { PageHeader, Section } from '../../components/ui/data';
 import { Alert, PageLoader } from '../../components/ui/feedback';
-import { CheckboxField, ChoiceChips, Field, TextField } from '../../components/ui/form';
+import { CheckboxField, ChoiceChips, Field, SelectField, TextField } from '../../components/ui/form';
 import useAuth from '../../hooks/useAuth';
 import { useAction, useDocumentTitle } from '../../hooks/useData';
 import { employerJobApi, orgApi } from '../../services';
@@ -26,6 +26,25 @@ const CollaboratorPicker = ({ value, onChange, me }) => {
   );
 };
 
+/** "Begin from scratch or Prefill from previous jobs / internships". */
+const PrefillPicker = ({ kind, value, onPick }) => {
+  const word = kind === 'internship' ? 'internships' : 'jobs';
+  const list = useQuery({ queryKey: ['employer-jobs', 'prefill', kind], queryFn: () => employerJobApi.list({ kind, limit: 100, sort: '-createdAt' }), staleTime: 60 * 1000 });
+  const options = (list.data?.data || []).map((j) => ({ value: j._id, label: `${j.title}${j.locations?.[0]?.city ? ` · ${j.locations[0].city}` : ''} (${j.status})` }));
+  return (
+    <Section title="How do you want to start?">
+      <SelectField
+        label={`Begin from scratch or prefill from previous ${word}`}
+        placeholder="Begin from scratch"
+        options={options}
+        value={value}
+        onChange={(e) => onPick(e.target.value)}
+        hint={options.length ? 'Every field is copied. Dates are left empty so you can set new ones.' : `You have no previous ${word} yet`}
+      />
+    </Section>
+  );
+};
+
 const PostJob = () => {
   const { id: routeId } = useParams();
   useDocumentTitle(routeId ? 'Edit job' : 'Post a job');
@@ -39,6 +58,22 @@ const PostJob = () => {
   const [featured, setFeatured] = useState(false);
   const [savedAt, setSavedAt] = useState(null);
   const [status, setStatus] = useState('draft');
+  const [prefillFrom, setPrefillFrom] = useState('');
+  const pickPrefill = async (id) => {
+    setPrefillFrom(id);
+    if (!id) return setForm((f) => ({ ...JOB_BLANK, kind: f.kind }));
+    try {
+      const j = await employerJobApi.get(id);
+      const next = jobToForm(j.job || j);
+      setForm({ ...next, deadlineAt: '', walkIn: { ...next.walkIn, startDate: '', endDate: '' } });
+      const prev = j.job || j;
+      setExtra((x) => ({ ...x, applyExternalUrl: prev.applyExternalUrl || '', googleJobsEnabled: prev.googleJobsEnabled !== false }));
+      toast.success('Form filled from the previous post. Review and publish');
+    } catch (e) {
+      toast.error(e.message);
+    }
+    return undefined;
+  };
   const loaded = useRef(!routeId);
   const savedCollaborators = useRef([]);
 
@@ -61,7 +96,7 @@ const PostJob = () => {
     let id = jobId;
     if (id) await employerJobApi.update(id, body);
     else {
-      const created = await employerJobApi.create({ ...body, publish: false });
+      const created = await employerJobApi.create({ ...body, publish: false, ...(prefillFrom ? { prefillFrom } : {}) });
       id = created._id || created.job?._id;
       setJobId(id);
     }
@@ -142,6 +177,7 @@ const PostJob = () => {
           return editable ? publish.mutate() : update.mutate();
         }}
       >
+        {!routeId && !jobId && <PrefillPicker kind={form.kind} value={prefillFrom} onPick={pickPrefill} />}
         <JobPostForm
           form={form}
           setForm={setForm}

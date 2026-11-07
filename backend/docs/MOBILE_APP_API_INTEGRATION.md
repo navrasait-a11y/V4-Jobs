@@ -172,6 +172,8 @@ After registration, show the **"Enter OTP & Verify"** screen and call `/auth/mob
 
 ---
 
+Push payloads now also include `data.link` (the matching website URL). The app can ignore it and keep routing by `data.screen`.
+
 ## 5. Master data (dropdowns) and locations
 
 | Method | Path | Notes |
@@ -184,12 +186,12 @@ After registration, show the **"Enter OTP & Verify"** screen and call `/auth/mob
 
 Useful types for candidate screens:
 * `experience_level, journey_status, present_job_status, heard_from, gender, marital_status, guardian_relation, caste_category`
-* `disability_status, disability_type, military_status, service_type, english_fluency, language, asset`
+* `disability_status, disability_type, military_status, service_type, english_fluency, language, asset` (Assets Availability), `candidate_document` (Documents Availability), `relocate_option` (Ready To Relocate), `diversity_hiring`, `interview_mode`, `internship_type`, `top_company`
 * `job_title, key_skill, it_skill, company_name, employer_type, employment_type, job_mode, shift, salary_type, perk, notice_period`
 * `industry` → `sub_industry`, `department` → `department_function` (pick up to 5 parents and up to 20 children), `job_role` (flat list, up to 10), `education_level` → `degree` → `specialisation`
 * `institution, education_status, education_type, education_medium, marks_type, certification, social_platform, job_category`
 
-Send the option **`name`** string in requests. Limits (from the client's Excel, enforced by the API): key skills ≤ 15, IT skills ≤ 15, industries ≤ 5, departments ≤ 5, job roles ≤ 10, languages ≤ 10, assets ≤ 10, certifications ≤ 10, preferred locations ≤ 3, preferred job modes ≤ 3, preferred shifts ≤ 3, job modes ≤ 3 per employment.
+Send the option **`name`** string in requests. Limits (from the client's Excel sheets, enforced by the API): key skills ≤ 20, IT skills ≤ 15, industries ≤ 5, departments ≤ 5, job roles ≤ 10 per employment and ≤ 15 in preferences, languages ≤ 10, assets ≤ 25, documents ≤ 35, certifications ≤ 10, preferred locations ≤ 4, Ready To Relocate ≤ 4, preferred job modes ≤ 3, preferred shifts ≤ 3, job modes ≤ 3 per employment.
 
 ---
 
@@ -216,10 +218,10 @@ Send the option **`name`** string in requests. Limits (from the client's Excel, 
 
 * **Identity:** `fullName, displayName, username, gender, about, socialLinks[{platform,url}]`
 * **Journey:** `experienceLevel, journeyStatus, presentJobStatus, availabilityStatus (open_to_work | not_available | serving_notice)`
-* **Personal:** `dob, maritalStatus, guardianRelation, guardianName, category, currentLocation, hometown, disability{status,type}, military{status,serviceType}, englishFluency, languages[], assets[], hasTwoWheeler, hasFourWheeler, drivingLicense`
+* **Personal:** `dob, maritalStatus, guardianRelation, guardianName, category, currentLocation, hometown, disability{status,type}, military{status,serviceType}, englishFluency, languages[], assets[], documents[], hasTwoWheeler, hasFourWheeler, drivingLicense`
 * **Resume:** `resumeHeadline, profileSummary, keySkills[], itSkills[], certifications[]`
 * **Work:** `totalExperience{years,months}, currentSalary (monthly in-hand), noticePeriod, industries[], subIndustries[] (≤20), departments[], functions[] (≤20), roles[]`
-* **Preferences:** `preferences{ jobModes[] (≤3), locations[] (≤3), willingToRelocate, anywhereInIndia, expectedSalary, employmentTypes[], shifts[], skills[], industries[], subIndustries[], departments[], functions[], roles[], noticePeriod, jobTypes['job','internship'] }`
+* **Preferences:** `preferences{ jobModes[] (≤3), locations[] (≤4), relocation[] (≤4 of relocate_option; "No- Not Willing To Relocate" goes alone), distanceKm (5…200), willingToRelocate, anywhereInIndia (both derived from relocation when it is sent), expectedSalary, employmentTypes[], shifts[], skills[], industries[], subIndustries[], departments[], functions[], roles[], noticePeriod, jobTypes['job','internship'] }`
 * **Social / portfolio:** `socialProfiles[{platform,url}], portfolios[{name,url}]`
 * **Settings:** `notificationPrefs{ email, sms, whatsapp, push, jobAlerts, recruiterMessages, marketing }, privacy{ profileVisibility: public|recruiters|hidden, showContact }`
 
@@ -257,19 +259,28 @@ Set the correct `contentType`: `application/pdf`, `application/msword` or `appli
 
 | Group | Params |
 |---|---|
-| Keywords and type | `q`, `kind=job\|internship\|any` |
-| Location | `location` (cities or states), `includeRemote=true` (add remote jobs to a location search), `remoteOnly=true` (remote jobs only) |
-| Experience and pay | `experience` (years), `salaryMin`, `salaryMax` (monthly), `stipendMin`, `durationMax` (internship months) |
-| Side filters | `workMode`, `department`, `function`, `role`, `industry`, `subIndustry`, `employmentType`, `education`, `skills`, `shift`, `category` (IT Jobs / Non IT Jobs / Work From Home Jobs …) |
-| Employer | `companyType`, `postedBy=company\|consultancy`, `organization` (employer id), `topCompanies=true`, `verifiedOnly=true` |
-| Labels | `label=premium,featured,urgent,actively_hiring` |
-| Freshness and sort | `freshness=1\|3\|7\|15\|30` (days), `sort=relevance\|date\|salary` |
+| Keywords and type | `q`, `keywords[]` (≤20 boxes, OR-ed), `mandatory[]` (starred keywords that must match), `allMandatory=true`, `kind=job\|internship\|any` |
+| Location | `location[]` (≤20 cities / districts / states), `distanceKm=5\|10\|15\|20\|25\|35\|50\|75\|100\|150\|200` ("Show jobs within", needs `location`), `includeRemote=true`, `remoteOnly=true` |
+| Experience and pay | `experience` (years), `experienceMin`, `experienceMax` (years, may be fractional: 1 month = 0.0833), `experienceLevel[]`, `salaryMin`, `salaryMax` (monthly in-hand), `stipend[]=Paid\|Unpaid`, `stipendMin`, `stipendMax`, `durationMax` |
+| Side filters | `workMode[]`, `department[]`, `function[]`, `role[]`, `industry[]`, `subIndustry[]`, `employmentType[]` (Job Type), `shift[]`, `joiningPeriod[]` (notice period values), `education[]`, `degree[]`, `specialisation[]`, `skills[]`, `category` |
+| Employer | `companyType[]` (Indian MNC, Startup …), `companySize[]` (0-10 … 4000 Plus), `topCompany[]` (lookup `top_company`), `postedBy[]=company\|consultancy`, `organization`, `topCompanies=true`, `verifiedOnly=true` |
+| Labels | `label[]=premium\|featured\|urgent\|actively_hiring` |
+| Date posted and sort | `freshness=1\|2\|4\|7\|10\|15` (days), `sort=relevance\|salary\|salary_asc\|date` (Relevant / Salary High-Low / Low-High / Date posted) |
+
+Send list params as repeated keys (`role[]=Accountant&role[]=Cashier`); a comma string still works for values without commas. Option names such as industries can contain commas, so prefer arrays.
 
 **Job card fields:**
 * `_id, slug, kind, title, designation, organization`
 * `orgSnapshot{ name, logo, isVerified, slug, username, employerType }`
 * `locations[], isRemote, experience{min,max}, salary{min,max,period,hidden}, stipend{min,max}, duration{value,unit}`
 * `jobModes[], employmentTypes[], keySkills[], labels[], isFeatured, publishedAt, refreshedAt, deadlineAt, openings, stats.applications`
+
+**Job detail extra fields ("Other Forms" Excel):** `experienceLevels[], salary.type, perks[], internshipType, stipend{paid,type,min,max,hidden}, duration{value,unit,noFixed}, education{levels,degrees,specialisations,institutions,types,statuses,mediums,marksType,marksValue}, certifications[], genders[], maritalStatuses[], ageRange{min,max}` (max 61 = "60+ Years"), `englishFluency[], languages[], diversity[], disabilityStatuses[], disabilityTypes[], assets[], noticePeriods[], distanceKm, relocateOptions[], interviewMode, walkIn{startDate,endDate,durationDays,timing,venue,mapUrl}, contact{timeFrom,timeTo,dayFrom,dayTo}`.
+
+**Call Now / Request Call Back:** phone numbers and e-mails are never in the public job. When the user is signed in as a candidate, the detail has `contactAction`:
+* `{ type: "call", mode, name, mobile, email, timeFrom, timeTo, dayFrom, dayTo }` → show **Call Now** (`tel:+91<mobile>`). Modes: Walk-in, Candidates Can Call Me Directly, Candidates Can Call Other Recruiter.
+* `{ type: "callback", mode, requested }` → show **Request Call Back** → `POST /jobs/:id/callback` (✔). Repeating it returns `{ requested: true, duplicate: true }`.
+* `null` → nothing (for example "Will Confirm Later" without a number). Signed-out users see neither button.
 
 If `salary.hidden` is true, show "Not disclosed". Use `refreshedAt` for "Posted x days ago". If a consultancy hides its client, `consultancyClient.hideName` is `true` and no client name is sent.
 
@@ -290,7 +301,9 @@ If `salary.hidden` is true, show "Not disclosed". Use `refreshedAt` for "Posted 
 | GET | `/invites?status=sent\|viewed\|applied\|declined` | ✔ | | "Job Invite Responses" from employers |
 | POST | `/invites/:id/decline` | ✔ | | |
 
-Apply errors: `ALREADY_APPLIED` (409), `JOB_CLOSED`, `ANSWER_REQUIRED`, `BLOCKED`, `EXTERNAL_APPLY` (open `error.details.url` in the browser).
+Apply errors: `ALREADY_APPLIED` (409), `JOB_CLOSED`, `ANSWER_REQUIRED`, `ANSWER_INVALID`, `BLOCKED`, `EXTERNAL_APPLY` (open `error.details.url` in the browser).
+
+**Screening question types** (`job.questions[].type`): `single_choice` (one of `options`), `multiple_choice` (send `answer` as an array of `options`), `short_answer`, `text` (no digits), `number` (numbers only). Older jobs may still have `yes_no` / `choice`.
 
 **Guest apply fields** (Candidate Job Apply form):
 
@@ -298,9 +311,12 @@ Apply errors: `ALREADY_APPLIED` (409), `JOB_CLOSED`, `ANSWER_REQUIRED`, `BLOCKED
 * **Plain fields:** `gender, dob, maritalStatus, hasTwoWheeler, hasFourWheeler, drivingLicense, presentJobStatus, experienceLevel, totalExperienceMonths, currentJobTitle, currentSalary, currentCompany, currentCompanyType, employmentType, currentlyWorking, noticePeriod, englishFluency, heardFrom, consentCommunication, eventId`
 * **JSON-string fields:**
   * `disability` (`{status,type}`), `military`
-  * `assets[]`, `education` (`{level,degree,specialisation,institution}`)
-  * `keySkills[]`, `roles[]`, `departments[]`, `industries[]`
-  * `workLocation{}`, `currentLocation{}`, `languages[]`, `preferredLocations[]` (≤4)
+  * `assets[]` (≤25, lookup `asset`), `documents[]` (≤35, lookup `candidate_document`), `education` (`{level,degree,specialisation,institution}`)
+  * `keySkills[]` (≤20), `roles[]` (≤15), `industries[]` (≤5) + `subIndustries[]` (≤20), `departments[]` (≤5) + `functions[]` (≤20)
+  * `workLocation{}`, `currentLocation{}`, `languages[]`, `preferredLocations[]` (≤4), `relocation[]` (≤4, lookup `relocate_option`)
+* **Plain (new):** `distanceKm` ("Show jobs within", one of 5 … 200)
+* Experience level labels in the app: Experienced → "I am Experienced", Fresher → "I am Fresher", Internship → "I did an Internship", Apprenticeship → "I did an Apprenticeship". "Duration of Experience" goes as `totalExperienceMonths` (Fresher = 0, 1–11 months, 1–49 years, 50 Years Plus = 600).
+* After success show **Setup Profile and Job Preference** (open the profile wizard). Keep the half-filled form on the device so it can be resumed after an error.
   * `answers[]`
 * **File:** `resume`
 

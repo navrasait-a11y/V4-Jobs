@@ -10,6 +10,7 @@ export function useLookups(...types) {
   const { data } = useQuery({
     queryKey: ['lookups', types.join(',')],
     queryFn: () => lookupApi.bulk(types),
+    enabled: types.length > 0,
     staleTime: 5 * 60 * 1000,
   });
   return useMemo(() => Object.fromEntries(types.map((t) => [t, (data?.[t] || []).map((o) => o.name)])), [data]); // eslint-disable-line react-hooks/exhaustive-deps

@@ -57,6 +57,8 @@ import { jobFields } from '../jobs/job.validation.js';
 import { updateMember, addMember } from '../employers/employer.service.js';
 import { deliverEmail, deliverSms } from '../../shared/services/channels.js';
 import { renderEmail } from '../../shared/services/emailTemplates.js';
+import { systemHealth } from './admin.health.service.js';
+import { profileRouter } from '../candidates/candidate.routes.js';
 
 const r = Router();
 r.use(authenticate, authorize(ROLES.ADMIN));
@@ -102,6 +104,7 @@ const trackingBody = Joi.object({
 
 /* ============================================================ dashboard */
 
+r.get('/system/health', requireAdminPermission('dashboard.view'), async (_req, res) => ok(res, await systemHealth()));
 r.get('/dashboard', requireAdminPermission('dashboard.view'), validate({ query: Joi.object(timespan) }), async (req, res) =>
   ok(res, await analytics.adminDashboard(req.query)),
 );
@@ -142,6 +145,20 @@ const candidateQuery = Joi.object({
 });
 const cand = Router();
 cand.use(requireAdminPermission('candidates.manage'));
+
+/* Full profile editing for any candidate: the candidate's own profile routes, acting as that candidate. */
+cand.use(
+  '/:id/profile',
+  validate({ params: Joi.object({ id: objectId.required() }).unknown(true) }),
+  async (req, _res, next) => {
+    const target = await User.findOne({ _id: req.params.id, role: ROLES.CANDIDATE });
+    if (!target) return next(ApiError.notFound('Candidate not found'));
+    req.subject = Object.assign(Object.create(req), { user: target });
+    if (req.method !== 'GET') audit(req, { action: 'candidate.profile_edit', entity: 'User', entityId: target._id, changes: { path: req.path } });
+    return next();
+  },
+  profileRouter((req) => req.subject),
+);
 cand.get('/', validate({ query: candidateQuery }), async (req, res) =>
   paginated(res, await users.listCandidates(req.query, parsePagination(req.query, { allowedSort: ['createdAt', 'fullName', 'lastActiveAt', 'lastLoginAt'] }))),
 );
@@ -392,6 +409,11 @@ r.post(
   validate({ params: idParam, body: Joi.object({ type: Joi.string().valid('activation', 'password_reset').required() }) }),
   async (req, res) => ok(res, await users.sendAccountLink(req.user, req.params.id, req.body.type), 'E-mail sent'),
 );
+r.get('/users/:id', requireAdminPermission('users.manage'), validate({ params: idParam }), async (req, res) => {
+  const user = await User.findById(req.params.id);
+  if (!user) throw ApiError.notFound('User not found');
+  return ok(res, { user: user.toSafeJSON({ includeAdminFields: true }) });
+});
 r.patch(
   '/users/:id',
   requireAdminPermission('users.manage'),

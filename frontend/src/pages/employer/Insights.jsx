@@ -175,7 +175,7 @@ export const Enquiries = () => {
         query={query}
         empty={<EmptyState icon="contact_mail" title="No enquiries yet" />}
       />
-      <Pagination meta={query.data?.meta} onPage={(page) => setFilters({ page })} />
+      <Pagination meta={query.data?.meta} onPage={(page) => setFilters({ page })} limit={filters.limit} onLimit={(limit) => setFilters({ limit })} />
     </div>
   );
 };

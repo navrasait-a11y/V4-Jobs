@@ -26,7 +26,12 @@ export default defineConfig([
   },
   {
     // Config files run in Node, not the browser, so they need Node globals (process, __dirname, etc.).
-    files: ['vite.config.js', 'eslint.config.js', '*.config.{js,mjs,cjs}'],
+    files: ['vite.config.js', 'eslint.config.js', '*.config.{js,mjs,cjs}', 'api/**/*.js'],
     languageOptions: { globals: globals.node },
+  },
+  {
+    // Service worker (Firebase web push).
+    files: ['public/*-sw.js'],
+    languageOptions: { globals: { ...globals.serviceworker, firebase: 'readonly' } },
   },
 ])

@@ -115,13 +115,29 @@ export const AlertSendJobs = ({ alert, onClose }) => {
 };
 
 /** Upload field for images stored through the CMS media endpoint. */
+/** Image upload into the media library; value is { key, url }. */
 export const MediaField = ({ label, value, onChange }) => {
-  const upload = useAction((file) => adminApi.upload('/cms/media', { file }), { onSuccess: (m) => onChange({ key: m.key, url: m.url }) });
+  const upload = useAction((file) => adminApi.upload('/cms/media', { file }), { silent: true, onSuccess: (m) => onChange({ key: m.key, url: m.url }) });
   return (
     <div>
       <p className="mb-1.5 text-sm font-medium text-brand-dark">{label}</p>
-      {value?.url && <img src={value.url} alt="" className="mb-2 h-24 rounded-md object-cover" />}
-      <input type="file" accept="image/*" aria-label={label} className="w-full" onChange={(e) => e.target.files?.[0] && upload.mutate(e.target.files[0])} />
+      <div className="flex items-center gap-3 rounded-lg border border-dashed border-brand-border p-3">
+        <div className="flex h-16 w-24 shrink-0 items-center justify-center overflow-hidden rounded-md bg-brand-tint">
+          {value?.url ? <img src={value.url} alt="" className="h-full w-full object-cover" /> : <span className="material-symbols-outlined text-brand-gray-muted">image</span>}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <label className="cursor-pointer rounded-md border border-brand-border px-3 py-1.5 text-xs font-semibold text-brand-dark hover:border-brand-blue">
+            {upload.isPending ? 'Uploading…' : value?.url ? 'Replace' : 'Upload image'}
+            <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" aria-label={label} hidden disabled={upload.isPending} onChange={(e) => e.target.files?.[0] && upload.mutate(e.target.files[0])} />
+          </label>
+          {value?.url && (
+            <button type="button" onClick={() => onChange(null)} className="rounded-md px-3 py-1.5 text-xs font-semibold text-brand-red hover:bg-red-50">
+              Remove
+            </button>
+          )}
+        </div>
+      </div>
+      {upload.error && <p className="mt-1 text-xs text-brand-red">{upload.error.message}</p>}
     </div>
   );
 };

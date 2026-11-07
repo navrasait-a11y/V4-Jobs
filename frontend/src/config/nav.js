@@ -63,6 +63,7 @@ export const adminNav = [
     items: [
       { label: 'Overview', to: '/admin/overview', icon: 'dashboard' },
       { label: 'Analytics', to: '/admin/analytics', icon: 'monitoring' },
+      { label: 'Platform Health', to: '/admin/health', icon: 'health_and_safety' },
     ],
   },
   {

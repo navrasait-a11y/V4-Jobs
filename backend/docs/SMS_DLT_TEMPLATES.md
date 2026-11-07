@@ -1,5 +1,11 @@
 # SMS templates for DLT registration
 
+> **OTPs work without DLT.** With `APITXT_OTP_MODE=otp_api` (default) every OTP goes through the apitxt
+> Unified OTP API (`/api/sendOTP`) and only `APITXT_AUTH_KEY` is needed. Later you can set
+> `APITXT_OTP_TEMPLATE_ID` (your apitxt SMS template), `APITXT_OTP_CHANNEL=whatsapp` with
+> `APITXT_OTP_TEMPLATE_NAME`, or switch to `APITXT_OTP_MODE=dlt`. The templates below are still needed for
+> non-OTP SMS (interview, reminders, alerts, bulk).
+
 Indian operators block any transactional SMS that does not match a DLT-approved template.
 
 1. Register a Principal Entity and a 6-character sender ID (header) on your DLT portal.

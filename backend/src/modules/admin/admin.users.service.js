@@ -473,6 +473,11 @@ export async function getEmployer(id) {
 }
 
 const ORG_ADMIN_FIELDS = [
+  'logo',
+  'coverPhoto',
+  'subIndustries',
+  'functions',
+  'verification',
   'name',
   'legalName',
   'username',

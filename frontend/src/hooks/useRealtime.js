@@ -91,7 +91,8 @@ export function notificationLink(n, role) {
     case 'mailbox':
       return employer ? '/employer/mailbox' : '/candidate/mailbox';
     case 'employer_job':
-      return '/employer/jobs';
+    case 'job_callbacks':
+      return d.jobId ? `/employer/jobs?callbacks=${d.jobId}` : '/employer/jobs';
     case 'kyc':
       return '/employer/settings?tab=verification';
     case 'profile':

@@ -32,7 +32,7 @@ const otpSchema = new Schema(
     channel: { type: String, enum: ['email', 'sms', 'whatsapp'], required: true },
     purpose: {
       type: String,
-      enum: ['login', 'register', 'verify_email', 'verify_mobile', 'reset_password', 'change_mobile', 'change_email', 'guest_apply', 'job_alert', 'two_factor'],
+      enum: ['login', 'register', 'verify_email', 'verify_mobile', 'reset_password', 'change_mobile', 'change_email', 'guest_apply', 'guest_post', 'job_alert', 'two_factor'],
       required: true,
     },
     codeHash: { type: String, required: true },

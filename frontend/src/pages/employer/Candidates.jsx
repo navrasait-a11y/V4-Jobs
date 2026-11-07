@@ -404,10 +404,11 @@ const Candidates = () => {
   const [filing, setFiling] = useState(false);
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState('');
-  const search = useMutation({ mutationFn: ({ filters, p }) => talentApi.search(filters, { page: p, limit: 20 }) });
-  const run = (filters = form, p = 1) => {
+  const [limit, setLimit] = useState(20);
+  const search = useMutation({ mutationFn: ({ filters, p, size }) => talentApi.search(filters, { page: p, limit: size }) });
+  const run = (filters = form, p = 1, size = limit) => {
     setFilterOpen(false);
-    search.mutate({ filters: compact(filters), p });
+    search.mutate({ filters: compact(filters), p, size });
   };
   const fromJob = params.get('job');
   const saved = params.get('search');
@@ -427,8 +428,12 @@ const Candidates = () => {
           run(next);
         }
       }).catch(() => {});
+    } else if (params.get('keywords')) {
+      const next = { ...BLANK, keywords: params.get('keywords').split(',').map((k) => k.trim()).filter(Boolean).slice(0, 20) };
+      setForm(next);
+      run(next);
     } else run(BLANK);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [params.get('keywords')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveSearch = useAction(() => talentApi.saveSearch({ name, filters: compact(form) }), {
     success: 'Search saved',
@@ -459,7 +464,7 @@ const Candidates = () => {
                 setForm(next);
                 run(next);
               }}
-              options={[{ value: 'relevance', label: 'Relevance' }, { value: 'freshness', label: 'Recently updated' }, { value: 'last_active', label: 'Last active' }]}
+              options={[{ value: 'relevance', label: 'Relevance' }, { value: 'freshness', label: 'Freshness' }, { value: 'last_active', label: 'Last active date' }, { value: 'email_optimized', label: 'Email optimized' }, ...(form.jobId ? [{ value: 'ai', label: 'AI relevance' }] : [])]}
             />
           </>
         }
@@ -487,7 +492,15 @@ const Candidates = () => {
               <CandidateCard key={c.candidateId} c={c} selected={selected.includes(c.candidateId)} onToggle={() => setSelected((s) => (s.includes(c.candidateId) ? s.filter((x) => x !== c.candidateId) : [...s, c.candidateId]))} />
             ))}
           </div>
-          <Pagination meta={search.data?.meta} onPage={(p) => run(form, p)} />
+          <Pagination
+            meta={search.data?.meta}
+            onPage={(p) => run(form, p)}
+            limit={limit}
+            onLimit={(size) => {
+              setLimit(size);
+              run(form, 1, size);
+            }}
+          />
         </div>
       </div>
       <Drawer open={filterOpen} onClose={() => setFilterOpen(false)} title="Filters" width="max-w-sm">

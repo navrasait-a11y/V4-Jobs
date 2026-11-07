@@ -145,7 +145,7 @@ async function getMessaging() {
 }
 
 /** Sends FCM push to Android / iOS / Web tokens. Returns tokens that FCM reports as invalid. */
-export async function deliverPush({ tokens = [], title, body, data = {}, image }) {
+export async function deliverPush({ tokens = [], title, body, data = {}, image, link }) {
   if (!tokens.length) return [];
   const m = await getMessaging();
   if (!m) {
@@ -159,6 +159,8 @@ export async function deliverPush({ tokens = [], title, body, data = {}, image }
     data: stringData,
     android: { priority: 'high' },
     apns: { payload: { aps: { sound: 'default' } } },
+    // Browser push: opens the page on click (FCM requires an https link).
+    webpush: { notification: { icon: '/favicon.png', badge: '/favicon.png' }, ...(link?.startsWith('https://') ? { fcmOptions: { link } } : {}) },
   });
   const invalid = [];
   res.responses.forEach((r, i) => {

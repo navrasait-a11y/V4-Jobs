@@ -10,47 +10,54 @@ import ApiError from '../../shared/errors/ApiError.js';
 import * as s from './candidate.service.js';
 import * as v from './candidate.validation.js';
 
+const itemSchema = (section) => (section === 'employments' ? v.employment : v.education);
+
+/**
+ * Profile editing routes, shared by the candidate (/candidates/me) and the admin panel
+ * (/admin/candidates/:id/profile). `subject(req)` returns the request to act as: the candidate
+ * themself, or the admin's request re-targeted at the candidate being edited.
+ */
+export function profileRouter(subject = (req) => req) {
+  const p = Router({ mergeParams: true });
+  p.get('/', async (req, res) => ok(res, await s.getMyProfile(subject(req).user._id)));
+  p.patch('/', validate(v.updateProfile), async (req, res) => ok(res, await s.updateProfile(subject(req), req.body), 'Profile updated'));
+  // Specific paths first - otherwise /resume would be captured by /:section.
+  p.post('/resume', uploadLimiter, upload('resume', 'resume'), async (req, res) => created(res, await s.uploadResume(subject(req), req.file), 'Resume uploaded'));
+  p.delete('/resume', async (req, res) => ok(res, await s.deleteResume(subject(req)), 'Resume deleted'));
+  p.get('/resume/download', async (req, res) => ok(res, await s.resumeDownloadUrl(subject(req).user._id)));
+  p.post('/avatar', uploadLimiter, upload('image', 'avatar'), async (req, res) => ok(res, await s.uploadAvatar(subject(req), req.file), 'Profile photo updated'));
+  p.post('/:section', validate({ params: v.sectionParam }), async (req, res) => {
+    const { value, error } = itemSchema(req.params.section).validate(req.body, { abortEarly: false, stripUnknown: true });
+    if (error) throw ApiError.validation(error.details.map((d) => ({ field: d.path.join('.'), message: d.message })));
+    return created(res, await s.addItem(subject(req), req.params.section, value), 'Added');
+  });
+  p.patch('/:section/:itemId', validate({ params: v.sectionParam }), async (req, res) => {
+    const { value, error } = itemSchema(req.params.section)
+      .fork(['jobTitle', 'employerName', 'level'], (x) => x.optional())
+      .validate(req.body, { abortEarly: false, stripUnknown: true });
+    if (error) throw ApiError.validation(error.details.map((d) => ({ field: d.path.join('.'), message: d.message })));
+    return ok(res, await s.updateItem(subject(req), req.params.section, req.params.itemId, value), 'Updated');
+  });
+  p.delete('/:section/:itemId', validate({ params: v.sectionParam }), async (req, res) =>
+    ok(res, await s.removeItem(subject(req), req.params.section, req.params.itemId), 'Removed'),
+  );
+  return p;
+}
+
 const r = Router();
 r.use(authenticate, authorize(ROLES.CANDIDATE));
 
-r.get('/me', async (req, res) => ok(res, await s.getMyProfile(req.user._id)));
-r.patch('/me', validate(v.updateProfile), async (req, res) => ok(res, await s.updateProfile(req, req.body), 'Profile updated'));
 r.get('/me/dashboard', async (req, res) => ok(res, await s.dashboard(req.user._id)));
-
-// Specific paths first - otherwise /me/resume would be captured by /me/:section.
-r.post('/me/resume', uploadLimiter, upload('resume', 'resume'), async (req, res) => created(res, await s.uploadResume(req, req.file), 'Resume uploaded'));
-r.delete('/me/resume', async (req, res) => ok(res, await s.deleteResume(req), 'Resume deleted'));
-r.get('/me/resume/download', async (req, res) => ok(res, await s.resumeDownloadUrl(req.user._id)));
-r.post('/me/avatar', uploadLimiter, upload('image', 'avatar'), async (req, res) => ok(res, await s.uploadAvatar(req, req.file), 'Profile photo updated'));
-
 r.get('/me/resume-builder', async (req, res) => ok(res, await s.getResumeBuilder(req.user._id)));
 r.put('/me/resume-builder', validate(v.resumeBuilder), async (req, res) => ok(res, await s.saveResumeBuilder(req.user._id, req.body), 'Resume saved'));
-
 r.post('/me/deactivate', validate({ body: Joi.object({ reason: Joi.string().max(500).allow('') }) }), async (req, res) => {
   await s.deactivate(req, req.body);
   return ok(res, null, 'Account deactivated. Log in again any time to reactivate');
 });
-const itemSchema = (section) => (section === 'employments' ? v.employment : v.education);
-
-r.post('/me/:section', validate({ params: v.sectionParam }), async (req, res) => {
-  const { value, error } = itemSchema(req.params.section).validate(req.body, { abortEarly: false, stripUnknown: true });
-  if (error) throw ApiError.validation(error.details.map((d) => ({ field: d.path.join('.'), message: d.message })));
-  return created(res, await s.addItem(req, req.params.section, value), 'Added');
-});
-r.patch('/me/:section/:itemId', validate({ params: v.sectionParam }), async (req, res) => {
-  const { value, error } = itemSchema(req.params.section)
-    .fork(['jobTitle', 'employerName', 'level'], (x) => x.optional())
-    .validate(req.body, { abortEarly: false, stripUnknown: true });
-  if (error) throw ApiError.validation(error.details.map((d) => ({ field: d.path.join('.'), message: d.message })));
-  return ok(res, await s.updateItem(req, req.params.section, req.params.itemId, value), 'Updated');
-});
-r.delete('/me/:section/:itemId', validate({ params: v.sectionParam }), async (req, res) =>
-  ok(res, await s.removeItem(req, req.params.section, req.params.itemId), 'Removed'),
-);
-
 r.delete('/me', validate(v.deleteAccount), async (req, res) => {
   await s.deleteAccount(req, req.body);
   return ok(res, null, 'Account deleted');
 });
+r.use('/me', profileRouter());
 
 export default r;

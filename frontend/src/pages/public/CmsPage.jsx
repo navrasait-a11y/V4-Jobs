@@ -2,16 +2,20 @@ import React from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { EmptyState, ErrorState, PageLoader } from '../../components/ui/feedback';
-import { useDocumentTitle } from '../../hooks/useData';
 import { cmsApi } from '../../services';
 import { formatDate } from '../../utils/format';
+import useSeo from '../../hooks/useSeo';
 
 /** About, privacy, terms and any other admin-managed page. */
 const CmsPage = ({ slug: fixedSlug }) => {
   const params = useParams();
   const slug = fixedSlug || params.slug;
   const query = useQuery({ queryKey: ['cms-page', slug], queryFn: () => cmsApi.page(slug) });
-  useDocumentTitle(query.data?.title);
+  useSeo({
+    title: query.data?.seo?.title || query.data?.title,
+    description: query.data?.seo?.description || ((html) => String(html || '').replace(/<[^>]+>/g, ' '))(query.data?.content),
+    image: query.data?.seo?.ogImage,
+  });
   if (query.isPending) return <PageLoader />;
   if (query.isError) {
     return (

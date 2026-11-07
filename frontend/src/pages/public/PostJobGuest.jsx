@@ -6,10 +6,11 @@ import Button from '../../components/ui/Button';
 import { Section } from '../../components/ui/data';
 import { Alert } from '../../components/ui/feedback';
 import { CheckboxField, ChoiceChips, Field, MobileField, SelectField, TextField } from '../../components/ui/form';
-import { useAction, useDocumentTitle, useLookups } from '../../hooks/useData';
+import { useAction, useLookups } from '../../hooks/useData';
 import { jobApi } from '../../services';
 import useAuthStore from '../../store/useAuthStore';
 import { EMPLOYER_TYPE_OPTIONS } from '../../utils/options';
+import useSeo from '../../hooks/useSeo';
 
 const DRAFT_KEY = 'fjw.guestJobDraft';
 const EMPLOYER_BLANK = {
@@ -37,7 +38,7 @@ const readDraft = () => {
 
 /** Post a Job / Internship without an account ("Other Forms" Excel). OTP on the mobile, then the API creates the employer. */
 const PostJobGuest = () => {
-  useDocumentTitle('Post a job');
+  useSeo({ title: 'Post a job for free', description: 'Post a job or internship in minutes, no account needed. Verify your mobile and start receiving applications.', path: '/post-job' });
   const user = useAuthStore((s) => s.user);
   const lookups = useLookups('heard_from');
   const draft = readDraft();

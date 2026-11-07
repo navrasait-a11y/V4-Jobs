@@ -46,6 +46,10 @@ const EmployerLogin = lazy(() => import('../pages/public/EmployerLogin'));
 const EmployerRegister = lazy(() => import('../pages/public/EmployerRegister'));
 const EmployerLanding = lazy(() => import('../pages/public/EmployerLanding'));
 const AdminLogin = lazy(() => import('../pages/public/AdminLogin'));
+const AdminPostJob = lazy(() => import('../pages/admin/AdminPostJob'));
+const SystemHealth = lazy(() => import('../pages/admin/SystemHealth'));
+const AdminJobEdit = lazy(() => import('../pages/admin/AdminJobEdit'));
+const ContentEditor = lazy(() => import('../pages/admin/ContentEditor'));
 const PostJobGuest = lazy(() => import('../pages/public/PostJobGuest'));
 const NotFound = lazy(() => import('../pages/public/NotFound'));
 
@@ -95,10 +99,10 @@ const EmployerSettings = lazy(() => import('../pages/employer/Settings'));
 
 const adminPages = () => import('../pages/admin/AdminPages');
 const Impersonate = lazy(() => import('../pages/public/Impersonate'));
-const Overview = named(adminPages, 'Overview');
+const Overview = lazy(() => import('../pages/admin/AdminOverview'));
 const AdminAnalytics = named(adminPages, 'AdminAnalytics');
-const AdminCandidateDetail = named(adminPages, 'CandidateDetail');
-const AdminEmployerDetail = named(adminPages, 'EmployerDetail');
+const AdminCandidateDetail = lazy(() => import('../pages/admin/AdminCandidate'));
+const AdminEmployerDetail = lazy(() => import('../pages/admin/AdminEmployer'));
 const KycQueue = named(adminPages, 'KycQueue');
 const Taxonomy = named(adminPages, 'Taxonomy');
 const SupportChat = named(adminPages, 'SupportChat');
@@ -210,6 +214,13 @@ const AppRoutes = () => (
           <Route path="/admin/settings" element={<AdminSettings />} />
           <Route path="/admin/profile" element={<AdminProfile />} />
           <Route path="/admin/media" element={<MediaLibrary />} />
+          <Route path="/admin/jobs/post" element={<AdminPostJob />} />
+          <Route path="/admin/jobs/:id/edit" element={<AdminJobEdit />} />
+          <Route path="/admin/cms/new" element={<ContentEditor kind="page" key="page-new" />} />
+          <Route path="/admin/cms/:id/edit" element={<ContentEditor kind="page" />} />
+          <Route path="/admin/career-advice/new" element={<ContentEditor kind="blog" key="blog-new" />} />
+          <Route path="/admin/career-advice/:id/edit" element={<ContentEditor kind="blog" />} />
+          <Route path="/admin/health" element={<SystemHealth />} />
           {ADMIN_MODULES.map((name) => (
             <Route key={name} path={`/admin/${name}`} element={<AdminModule name={name} />} />
           ))}

@@ -15,9 +15,16 @@ import { consume } from '../billing/usage.service.js';
 import { notify, sendEmail } from '../notifications/notification.service.js';
 import { getWeights, scoreMatch } from '../matching/matching.service.js';
 import { buildTalentQuery, talentSort } from './talent.query.js';
+import { dateRangeFilter } from '../../shared/utils/timespan.js';
 import { citiesWithin } from '../masterdata/masterdata.service.js';
 
 const MAX_RESULTS = 5000;
+/** Sorts applied after the users $lookup (they can use `u.*`). "Email optimized" = verified, reachable e-mails first. */
+const PIPELINE_SORTS = {
+  freshness: { updatedAt: -1 },
+  last_active: { 'u.lastActiveAt': -1 },
+  email_optimized: { 'u.emailVerifiedAt': -1, profileCompletion: -1, updatedAt: -1 },
+};
 const CARD_FIELDS = {
   user: 1,
   experienceLevel: 1,
@@ -154,11 +161,8 @@ export async function search(member, filters, { page, limit }) {
     { $unwind: '$u' },
     ...(postFilter ? [{ $match: postFilter }] : []),
     {
-      $sort: hasText
-        ? { _score: -1, boostUntil: -1, profileCompletion: -1 }
-        : filters.sort === 'last_active'
-          ? { 'u.lastActiveAt': -1 }
-          : talentSort(filters.sort, false),
+      // Text relevance unless the employer picked another order.
+      $sort: hasText && ['relevance', 'ai', undefined].includes(filters.sort) ? { _score: -1, boostUntil: -1, profileCompletion: -1 } : PIPELINE_SORTS[filters.sort] || talentSort(filters.sort, false),
     },
     { $limit: MAX_RESULTS },
     { $facet: { items: [{ $skip: (page - 1) * limit }, { $limit: limit }, { $project: { ...CARD_FIELDS, u: 1 } }], total: [{ $count: 'n' }] } },
@@ -344,11 +348,13 @@ function ownScope(member, perm) {
   return hasEmployerPermission(member, perm) ? { organization: member.employer.organization } : { owner: member._id };
 }
 
-export async function listSavedSearches(member, { tab = 'mine', page, limit, skip }) {
+/** "Searched / Folders filters": Today, Yesterday, In last 2 / 5 / 7 days or a custom range (on last update). */
+export async function listSavedSearches(member, { tab = 'mine', page, limit, skip, ...span }) {
   let filter;
   if (tab === 'shared') filter = { organization: member.employer.organization, scope: 'resume', sharedWith: member._id };
   else if (tab === 'all') filter = { ...ownScope(member, 'saved_search.manage_all'), scope: 'resume' };
   else filter = { owner: member._id, scope: 'resume' };
+  Object.assign(filter, dateRangeFilter(span, 'updatedAt'));
   const [items, total] = await Promise.all([
     SavedSearch.find(filter).sort({ updatedAt: -1 }).skip(skip).limit(limit).populate('owner', 'fullName').lean(),
     SavedSearch.countDocuments(filter),
@@ -356,7 +362,11 @@ export async function listSavedSearches(member, { tab = 'mine', page, limit, ski
   return { items, total, page, limit };
 }
 
-export const recentSearches = (member, scope = 'resume') => RecentSearch.find({ owner: member._id, scope }).sort({ createdAt: -1 }).limit(20).lean();
+export const recentSearches = (member, scope = 'resume', span = {}) =>
+  RecentSearch.find({ owner: member._id, scope, ...dateRangeFilter(span) })
+    .sort({ createdAt: -1 })
+    .limit(20)
+    .lean();
 
 export async function saveSearch(member, { name, filters, sharedWith, alertEnabled }) {
   return SavedSearch.create({
@@ -385,14 +395,16 @@ export async function deleteSavedSearch(member, id) {
 
 const SYSTEM_FOLDERS = ['accessed', 'commented', 'contacted', 'shortlisted', 'rejected', 'hold'];
 
-export async function listFolders(member, { tab = 'mine' }) {
+export async function listFolders(member, { tab = 'mine', ...span }) {
   const orgId = member.employer.organization;
-  const filter =
-    tab === 'shared'
+  const filter = {
+    ...(tab === 'shared'
       ? { organization: orgId, sharedWith: member._id }
       : tab === 'all' && hasEmployerPermission(member, 'folder.manage_all')
         ? { organization: orgId }
-        : { organization: orgId, owner: member._id };
+        : { organization: orgId, owner: member._id }),
+    ...dateRangeFilter(span, 'updatedAt'),
+  };
   const folders = await CandidateFolder.aggregate([
     { $match: filter },
     { $project: { name: 1, description: 1, owner: 1, sharedWith: 1, createdAt: 1, updatedAt: 1, count: { $size: '$candidates' } } },

@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import PanelLayout from '../components/shell/PanelLayout';
+import HeaderSearch from '../components/shell/HeaderSearch';
 import VerifyContactBanner from '../components/shell/VerifyContactBanner';
 import Button from '../components/ui/Button';
 import { Avatar } from '../components/ui/data';
@@ -74,11 +75,17 @@ const EmployerLayout = () => (
     sidebarFooter={<SidebarFooter />}
     banner={<OrgBanner />}
     topExtra={
+      <>
+        <HeaderSearch role="employer" />
+        <Link to="/employer/saved-searches?tab=folders" title="Saved profiles" aria-label="Saved profiles" className="rounded-full p-2 text-brand-gray hover:bg-brand-tint hover:text-brand-dark">
+          <Icon name="bookmarks" size={22} />
+        </Link>
       <span className="hidden md:block">
         <Button asChild size="sm" variant="primary">
           <Link to="/employer/jobs/post">Post a job</Link>
         </Button>
       </span>
+      </>
     }
     profileMenu={profileMenu}
     subtitle="Employer"

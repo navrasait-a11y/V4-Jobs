@@ -4,9 +4,10 @@ import { useQuery } from '@tanstack/react-query';
 import Button from '../../components/ui/Button';
 import { Icon } from '../../components/ui/feedback';
 import { MobileField, SelectField, TextAreaField, TextField } from '../../components/ui/form';
-import { useAction, useDocumentTitle, useLookups } from '../../hooks/useData';
+import { useAction, useLookups } from '../../hooks/useData';
 import { billingApi, cmsApi } from '../../services';
 import { formatCurrency } from '../../utils/format';
+import useSeo from '../../hooks/useSeo';
 
 const features = [
   ['work', 'Job posting', 'Publish jobs and internships with screening questions.'],
@@ -50,7 +51,7 @@ const SalesForm = () => {
 };
 
 const EmployerLanding = () => {
-  useDocumentTitle('Hire on Freejobwala');
+  useSeo({ title: 'Hire on Freejobwala - post jobs and search resumes', description: 'Post jobs and internships, search a verified resume database, track applicants and hire faster with Freejobwala.', path: '/for-employers' });
   const { data: plans } = useQuery({ queryKey: ['plans', 'employer'], queryFn: () => billingApi.plans('employer') });
   return (
     <div>

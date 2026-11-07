@@ -32,6 +32,15 @@ publicJobs.get('/recommended', authenticate, authorize(ROLES.CANDIDATE), validat
 publicJobs.get('/saved', authenticate, authorize(ROLES.CANDIDATE), validate({ query: Joi.object(pagination) }), async (req, res) =>
   paginated(res, await s.listSavedJobs(req.user._id, parsePagination(req.query))),
 );
+/* candidate "Save Job Search": the search page URL query, re-run from the saved list */
+const savedSearchBody = Joi.object({ name: Joi.string().trim().min(2).max(120).required(), query: Joi.string().max(2000).allow('').required() });
+publicJobs.get('/searches', authenticate, authorize(ROLES.CANDIDATE), async (req, res) => ok(res, await s.listJobSearches(req.user)));
+publicJobs.post('/searches', authenticate, authorize(ROLES.CANDIDATE), validate({ body: savedSearchBody }), async (req, res) =>
+  created(res, await s.saveJobSearch(req.user, req.body), 'Search saved'),
+);
+publicJobs.delete('/searches/:id', authenticate, authorize(ROLES.CANDIDATE), validate({ params: idParam }), async (req, res) =>
+  ok(res, await s.removeJobSearch(req.user, req.params.id), 'Search removed'),
+);
 publicJobs.post('/guest-post/otp', otpLimiter, validate({ body: Joi.object({ mobile: mobile.required() }) }), async (req, res) =>
   ok(res, await s.guestPostOtp(req.body), 'OTP sent'),
 );
