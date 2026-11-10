@@ -88,13 +88,16 @@ const profileAccessSchema = new Schema(
     member: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     candidate: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     type: { type: String, enum: ['view', 'contact_unlock', 'resume_download', 'excel_download'], required: true },
-    source: String,
+    source: String, // view: search | application | invite | recommended | profile
+    job: { type: Schema.Types.ObjectId, ref: 'Job' }, // view from an application: which job
+    anonymous: { type: Boolean, default: false }, // recruiter browsed in private mode
   },
   { timestamps: { createdAt: true, updatedAt: false } },
 );
 profileAccessSchema.index({ organization: 1, candidate: 1, type: 1 });
 profileAccessSchema.index({ organization: 1, createdAt: -1 });
 profileAccessSchema.index({ candidate: 1, type: 1, createdAt: -1 });
+profileAccessSchema.index({ candidate: 1, member: 1, type: 1, createdAt: -1 });
 
 /** Job invites sent by employers to candidates (Invite to Apply). */
 const jobInviteSchema = new Schema(

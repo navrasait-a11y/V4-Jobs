@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import JobPostForm, { JOB_BLANK, jobFormErrors, toJobPayload } from '../../components/employer/JobPostForm';
+import JobPostForm, { JOB_BLANK, JOB_STEPS, jobFormErrors, toJobPayload } from '../../components/employer/JobPostForm';
+import { StepNav, Stepper, useSteps } from '../../components/ui/stepper';
 import Button from '../../components/ui/Button';
 import { Section } from '../../components/ui/data';
 import { Alert } from '../../components/ui/feedback';
@@ -27,6 +28,13 @@ const EMPLOYER_BLANK = {
   otp: '',
 };
 
+const STEPS = [
+  { key: 'company', title: 'About your company', short: 'Company', fields: ['employerType', 'organizationName'] },
+  ...JOB_STEPS,
+  { key: 'verify', title: 'Your details & verify', short: 'Verify', fields: ['fullName', 'email', 'mobile', 'otp', 'heardFrom', 'declarations', 'authorized', 'noCandidateFee', 'acceptTerms', 'consentCommunication'] },
+];
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 const readDraft = () => {
   try {
     const d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
@@ -50,9 +58,20 @@ const PostJobGuest = () => {
   const set = (k) => (e) => setEmployer((f) => ({ ...f, [k]: e?.target ? (e.target.type === 'checkbox' ? e.target.checked : e.target.value) : e }));
   const consultancy = employer.employerType === 'consultancy';
   const word = job.kind === 'internship' ? 'Post an Internship' : 'Post a Job';
+  const validate = () => {
+    const e = jobFormErrors(job, { requireAll: true });
+    if (employer.organizationName.trim().length < 2) e.organizationName = consultancy ? 'Enter your consultancy name' : 'Enter your company name';
+    if (employer.fullName.trim().length < 2) e.fullName = 'Enter your full name';
+    if (!/^[6-9]\d{9}$/.test(employer.mobile || '')) e.mobile = 'Enter a valid 10-digit mobile number';
+    if (!EMAIL.test(employer.email || '')) e.email = 'Enter a valid e-mail ID';
+    if (!employer.authorized || !employer.noCandidateFee || !employer.acceptTerms) e.acceptTerms = 'Please accept the declarations and terms to continue';
+    return e;
+  };
+  const { step, reached, goTo, next, validateAll, showErrors, errorSteps, last } = useSteps(STEPS, { validate, setErrors, watch: `${JSON.stringify(job)}|${JSON.stringify(employer)}` });
 
   // "Draft or Resume Form In Case of any Error": kept in this browser until the posting completes.
   useEffect(() => {
+    if (done) return undefined;
     const t = setTimeout(() => {
       try {
         const { otp: _otp, ...rest } = employer;
@@ -62,7 +81,7 @@ const PostJobGuest = () => {
       }
     }, 800);
     return () => clearTimeout(t);
-  }, [job, employer]);
+  }, [job, employer, done]);
 
   const sendOtp = useAction(() => jobApi.guestPostOtp(employer.mobile), { success: 'OTP sent to your mobile', onSuccess: () => setOtpSent(true) });
   const submit = useAction(
@@ -91,10 +110,12 @@ const PostJobGuest = () => {
           /* ignore */
         }
         setDone(true);
+        window.scrollTo({ top: 0 });
       },
       onError: (e) => {
         const fe = e.fieldErrors || {};
         setErrors(Object.fromEntries(Object.entries(fe).map(([k, v]) => [k.replace(/^(employer|job)\./, ''), v])));
+        showErrors(fe);
         toast.error(e.message);
       },
     },
@@ -104,24 +125,24 @@ const PostJobGuest = () => {
   if (done) {
     return (
       <div className="mx-auto max-w-xl px-4 py-12">
-        <Alert tone="success">Your {job.kind === 'internship' ? 'internship' : 'job'} is received and goes live after review. Check {employer.email} for a link to set your password and manage it.</Alert>
+        <Alert tone="success">
+          Your {job.kind === 'internship' ? 'internship' : 'job'} is received and goes live after review. Check {employer.email} for a link to set your password and manage it.
+        </Alert>
       </div>
     );
   }
 
   const onSubmit = (e) => {
     e.preventDefault();
-    const local = jobFormErrors(job, { requireAll: true });
-    if (employer.organizationName.trim().length < 2) local.organizationName = consultancy ? 'Enter your consultancy name' : 'Enter your company name';
-    setErrors(local);
-    if (Object.keys(local).length) return toast.error('Please fix the highlighted fields');
+    if (!last) return next();
+    if (!validateAll()) return undefined;
     if (!otpSent) return sendOtp.mutate();
     return submit.mutate();
   };
 
   return (
     <div className="bg-brand-tint px-4 py-6">
-      <form className="mx-auto max-w-4xl space-y-4" onSubmit={onSubmit}>
+      <form className="mx-auto max-w-4xl space-y-4" onSubmit={onSubmit} onKeyDown={(e) => e.key === 'Enter' && e.target.tagName === 'INPUT' && !last && e.preventDefault()}>
         <div>
           <h1 className="text-xl font-bold text-brand-dark sm:text-2xl">{word}</h1>
           <p className="mt-1 text-sm text-brand-gray">
@@ -132,70 +153,101 @@ const PostJobGuest = () => {
           </p>
         </div>
 
-        <Section title="We are a">
-          <div className="space-y-4">
-            <ChoiceChips options={EMPLOYER_TYPE_OPTIONS} value={employer.employerType} onChange={(v) => v && set('employerType')(v)} />
-            <TextField label={consultancy ? 'Your consultancy name' : 'Your company name'} required value={employer.organizationName} onChange={set('organizationName')} error={errors.organizationName} />
-          </div>
-        </Section>
+        <Stepper steps={STEPS} current={step} reached={reached} onStep={goTo} errorSteps={errorSteps(errors)} />
 
-        <JobPostForm form={job} setForm={setJob} errors={errors} consultancy={consultancy} />
+        {step === 0 && (
+          <Section title="We are a">
+            <div className="space-y-4">
+              <ChoiceChips options={EMPLOYER_TYPE_OPTIONS} value={employer.employerType} onChange={(v) => v && set('employerType')(v)} />
+              <TextField label={consultancy ? 'Your consultancy name' : 'Your company name'} required value={employer.organizationName} onChange={set('organizationName')} error={errors.organizationName} />
+            </div>
+          </Section>
+        )}
 
-        <Section title="Employer user details">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <TextField label="User full name" required value={employer.fullName} onChange={set('fullName')} error={errors.fullName} />
-            <MobileField required value={employer.mobile} onChange={set('mobile')} disabled={otpSent} error={errors.mobile} />
-            <TextField label="Official email ID" required type="email" value={employer.email} onChange={set('email')} error={errors.email} />
-            <SelectField label="How did you hear about us?" options={lookups.heard_from} value={employer.heardFrom} onChange={set('heardFrom')} />
-          </div>
-          <div className="mt-4 space-y-2">
-            <CheckboxField required checked={employer.authorized} onChange={set('authorized')} label="I confirm that I am authorized to provide recruitment services and that the jobs or internship I post will represent genuine hiring requirements." />
-            <CheckboxField required checked={employer.noCandidateFee} onChange={set('noCandidateFee')} label="I agree not to charge candidates any unauthorized recruitment, registration, interview, security or placement fee through this platform." />
-            <CheckboxField checked={employer.consentCommunication} onChange={set('consentCommunication')} label="I agree to receive important updates via SMS, Email & WhatsApp." />
-            <CheckboxField
-              required
-              checked={employer.acceptTerms}
-              onChange={set('acceptTerms')}
-              label={
-                <>
-                  By clicking {word}, you agree to the{' '}
-                  <Link to="/legal/privacy-policy" target="_blank" className="text-brand-blue underline">
-                    Privacy Policy
-                  </Link>{' '}
-                  and{' '}
-                  <Link to="/legal/terms-and-conditions" target="_blank" className="text-brand-blue underline">
-                    Terms &amp; Conditions
-                  </Link>{' '}
-                  of Freejobwala.
-                </>
-              }
-            />
-          </div>
-          {otpSent && (
-            <Field className="mt-4" label="Enter OTP & verify" required error={errors.otp} hint={`Sent to +91 ${employer.mobile}`}>
-              <div className="flex flex-wrap items-center gap-2">
-                <TextField className="w-40" required inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={employer.otp} onChange={(e) => set('otp')(e.target.value.replace(/\D/g, ''))} aria-label="OTP" />
-                <Button size="sm" variant="ghost" loading={sendOtp.isPending} onClick={() => sendOtp.mutate()}>
-                  Resend OTP
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    setOtpSent(false);
-                    set('otp')('');
-                  }}
-                >
-                  Change number
-                </Button>
-              </div>
-            </Field>
-          )}
-        </Section>
+        {step > 0 && !last && <JobPostForm step={step - 1} form={job} setForm={setJob} errors={errors} consultancy={consultancy} />}
 
-        <Button type="submit" variant="primary" size="lg" fullWidth loading={submit.isPending || sendOtp.isPending}>
-          {otpSent ? 'Complete the posting' : word}
-        </Button>
+        {last && (
+          <Section title="Employer user details">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <TextField label="User full name" required value={employer.fullName} onChange={set('fullName')} error={errors.fullName} />
+              <MobileField required value={employer.mobile} onChange={set('mobile')} disabled={otpSent} error={errors.mobile} />
+              <TextField label="Official email ID" required type="email" value={employer.email} onChange={set('email')} error={errors.email} />
+              <SelectField label="How did you hear about us?" options={lookups.heard_from} value={employer.heardFrom} onChange={set('heardFrom')} />
+            </div>
+            <div className="mt-4 space-y-2">
+              <CheckboxField
+                required
+                checked={employer.authorized}
+                onChange={set('authorized')}
+                label="I confirm that I am authorized to provide recruitment services and that the jobs or internship I post will represent genuine hiring requirements."
+              />
+              <CheckboxField
+                required
+                checked={employer.noCandidateFee}
+                onChange={set('noCandidateFee')}
+                label="I agree not to charge candidates any unauthorized recruitment, registration, interview, security or placement fee through this platform."
+              />
+              <CheckboxField checked={employer.consentCommunication} onChange={set('consentCommunication')} label="I agree to receive important updates via SMS, Email & WhatsApp." />
+              <CheckboxField
+                required
+                checked={employer.acceptTerms}
+                onChange={set('acceptTerms')}
+                label={
+                  <>
+                    By clicking {word}, you agree to the{' '}
+                    <Link to="/legal/privacy-policy" target="_blank" className="text-brand-blue underline">
+                      Privacy Policy
+                    </Link>{' '}
+                    and{' '}
+                    <Link to="/legal/terms-and-conditions" target="_blank" className="text-brand-blue underline">
+                      Terms &amp; Conditions
+                    </Link>{' '}
+                    of Freejobwala.
+                  </>
+                }
+              />
+            </div>
+            {errors.acceptTerms && <p className="mt-2 text-xs font-medium text-brand-red">{errors.acceptTerms}</p>}
+            {otpSent && (
+              <Field className="mt-4" label="Enter OTP & verify" required error={errors.otp} hint={`Sent to +91 ${employer.mobile}`}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <TextField
+                    className="w-40"
+                    required
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    value={employer.otp}
+                    onChange={(e) => set('otp')(e.target.value.replace(/\D/g, ''))}
+                    aria-label="OTP"
+                  />
+                  <Button size="sm" variant="ghost" loading={sendOtp.isPending} onClick={() => sendOtp.mutate()}>
+                    Resend OTP
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setOtpSent(false);
+                      set('otp')('');
+                    }}
+                  >
+                    Change number
+                  </Button>
+                </div>
+              </Field>
+            )}
+          </Section>
+        )}
+
+        <StepNav
+          current={step}
+          total={STEPS.length}
+          onBack={() => goTo(step - 1)}
+          onNext={next}
+          submitLabel={otpSent ? 'Verify & post' : `Send OTP & ${word.toLowerCase()}`}
+          loading={submit.isPending || sendOtp.isPending}
+        />
       </form>
     </div>
   );

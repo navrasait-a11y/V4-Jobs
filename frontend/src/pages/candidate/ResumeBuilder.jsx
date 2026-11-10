@@ -614,11 +614,6 @@ const LanguageEditor = ({ items = [], onChange }) => {
     inputRef.current?.focus();
   };
 
-  const handleCancelEdit = () => {
-    setEditingId(null);
-    setLangName('');
-  };
-
   const handleRemove = (id) => {
     if (editingId === id) {
       setEditingId(null);
@@ -910,13 +905,6 @@ const CertificationEditor = ({ items = [], onChange }) => {
     setIssuer(item.issuer || '');
     setYear(item.year || '');
     nameInputRef.current?.focus();
-  };
-
-  const handleCancelEdit = () => {
-    setEditingId(null);
-    setName('');
-    setIssuer('');
-    setYear('');
   };
 
   const handleRemove = (id) => {
@@ -2269,7 +2257,11 @@ const TechPreview = ({ data = {} }) => {
     <div className="p-8 bg-white text-[13px] leading-relaxed text-slate-800 font-mono sm:font-sans">
       <div className="rounded-xl bg-slate-900 p-6 text-white mb-6">
         <h1 className="text-2xl font-bold tracking-tight text-white">{p.fullName || 'Your Name'}</h1>
-        {p.headline && <p className="mt-1 text-sm font-semibold text-emerald-400">{p.headline}</p>}
+        {p.headline && (
+          <p className="mt-1 text-sm font-semibold text-emerald-400" style={accent !== '#334155' ? { color: accent } : undefined}>
+            {p.headline}
+          </p>
+        )}
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-slate-300">
           {p.email && <span>📧 {p.email}</span>}
           {p.mobile && <span>📱 {p.mobile}</span>}

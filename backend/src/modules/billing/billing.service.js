@@ -284,7 +284,9 @@ export async function fulfilOrder(orderId, { paymentId, method } = {}) {
 
 export async function activateSubscription({ plan, organization, user, order, assignedBy, startsAt }) {
   const ownerFilter = organization ? { organization } : { user };
-  const current = await Subscription.findOne({ ...ownerFilter, status: 'active', endsAt: { $gt: new Date() } }).sort({ endsAt: -1 });
+  // Add-on packs (resume views, featured jobs, ...) only add credits: the current plan stays as it is.
+  if (plan.tier === 'addon') return activateAddon({ plan, ownerFilter, organization, order, assignedBy });
+  const current = await Subscription.findOne({ ...ownerFilter, status: 'active', endsAt: { $gt: new Date() }, 'planSnapshot.tier': { $ne: 'addon' } }).sort({ endsAt: -1 });
   // Renewing the same plan extends from the current end date; a new plan starts now.
   const start = startsAt || (current && String(current.plan) === String(plan._id) ? current.endsAt : new Date());
   const endsAt = new Date(start.getTime() + plan.durationDays * 24 * 3600 * 1000);
@@ -322,6 +324,22 @@ export async function activateSubscription({ plan, organization, user, order, as
     await Candidate.updateOne({ user }, { $set: { boostUntil: endsAt } });
     await User.updateOne({ _id: user }, { $addToSet: { labels: 'profile_booster' } });
   }
+  return sub;
+}
+
+async function activateAddon({ plan, ownerFilter, organization, order, assignedBy }) {
+  const now = new Date();
+  const sub = await Subscription.create({
+    ...ownerFilter,
+    plan: plan._id,
+    planSnapshot: { code: plan.code, name: plan.name, tier: plan.tier, audience: plan.audience, price: plan.price, durationDays: plan.durationDays, credits: plan.credits, features: plan.features },
+    order,
+    startsAt: now,
+    endsAt: new Date(now.getTime() + plan.durationDays * 24 * 3600 * 1000),
+    status: 'active',
+    assignedBy,
+  });
+  if (organization) await grantCredits(organization, plan.credits || {}, 'addon_purchase', String(sub._id));
   return sub;
 }
 
@@ -420,7 +438,8 @@ export async function mySubscriptions(user) {
     owner.organization ? Organization.findById(owner.organization).select('credits planFeatures planExpiresAt').lean() : null,
   ]);
   return {
-    active: subscriptions.find((s) => s.status === 'active' && s.endsAt > new Date()) || null,
+    active: subscriptions.find((s) => s.status === 'active' && s.endsAt > new Date() && s.planSnapshot?.tier !== 'addon') || null,
+    addons: subscriptions.filter((s) => s.status === 'active' && s.endsAt > new Date() && s.planSnapshot?.tier === 'addon'),
     subscriptions,
     credits: org?.credits,
     features: org?.planFeatures,
@@ -476,7 +495,7 @@ export async function processSubscriptionLifecycle() {
     sub.status = 'expired';
     await sub.save();
     if (sub.organization) {
-      const stillActive = await Subscription.exists({ organization: sub.organization, status: 'active', endsAt: { $gt: now } });
+      const stillActive = await Subscription.exists({ organization: sub.organization, status: 'active', endsAt: { $gt: now }, 'planSnapshot.tier': { $ne: 'addon' } }); // add-on packs never keep plan features on
       if (!stillActive) {
         await Organization.updateOne(
           { _id: sub.organization },

@@ -13,6 +13,7 @@ import HierarchyField from '../../components/ui/HierarchyField';
 import { useAction, useDocumentTitle, useLookups } from '../../hooks/useData';
 import { DuplicateEmployer } from './AdminPages';
 import { adminApi } from '../../services';
+import { gstinHint } from '../../utils/gstin';
 import { formatDate, formatDateTime, formatNumber, timeAgo, titleCase, toInputDate } from '../../utils/format';
 
 const STATUSES = ['active', 'pending', 'admin_review', 'blocked', 'suspended', 'trashed'];
@@ -109,7 +110,7 @@ const CompanyForm = ({ org, onSaved }) => {
           <TextField label="Website" value={form.website} onChange={set('website')} placeholder="https://" />
           <TextField label="Company e-mail" type="email" value={form.email} onChange={set('email')} />
           <MobileField label="Company phone" value={form.phone} onChange={set('phone')} />
-          <TextField label="GST number" value={form.gstNumber} onChange={(e) => set('gstNumber')(e.target.value.toUpperCase())} maxLength={15} />
+          <TextField label="GST number" value={form.gstNumber} onChange={(e) => set("gstNumber")(e.target.value.toUpperCase().replace(/s/g, ""))} maxLength={15} {...gstinHint(form.gstNumber)} />
           <TextField label="PAN" value={form.panNumber} onChange={(e) => set('panNumber')(e.target.value.toUpperCase())} maxLength={10} />
           <HierarchyField kind="industry" label="Industry / sector" value={{ parents: form.industries, children: form.subIndustries }} onChange={({ parents, children }) => setForm((f) => ({ ...f, industries: parents, subIndustries: children }))} />
           <HierarchyField kind="department" label="Departments" value={{ parents: form.departments, children: form.functions }} onChange={({ parents, children }) => setForm((f) => ({ ...f, departments: parents, functions: children }))} />

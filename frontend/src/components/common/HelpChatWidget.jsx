@@ -39,7 +39,7 @@ const Composer = ({ onSend, busy, placeholder }) => {
   };
   return (
     <form onSubmit={submit} className="flex gap-2 border-t border-brand-border p-2.5">
-      <input value={text} onChange={(e) => setText(e.target.value)} maxLength={500} placeholder={placeholder} aria-label="Message" className="h-10 min-w-0 flex-1 rounded-lg border border-brand-border px-3 text-sm outline-none focus:border-[#98A2B3]" />
+      <input value={text} onChange={(e) => setText(e.target.value)} maxLength={500} placeholder={placeholder} aria-label="Message" className="h-10 min-w-0 flex-1 rounded-lg border border-brand-border px-3 text-sm outline-none focus:border-brand-blue focus:shadow-[0_0_0_3px_var(--color-brand-blue-tint)]" />
       <button type="submit" disabled={busy || !text.trim()} aria-label="Send" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-orange text-white disabled:opacity-50">
         <Icon name="send" size={18} />
       </button>

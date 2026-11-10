@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import AddToCalendar from '../../components/common/AddToCalendar';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import CompanyCard from '../../components/common/CompanyCard';
@@ -7,7 +8,7 @@ import Button from '../../components/ui/Button';
 import { PageHeader, Pagination, StatusBadge, Tabs } from '../../components/ui/data';
 import { AlertCriteriaFields, criteriaError, criteriaForm, FREQUENCIES, toCriteria } from '../../components/candidate/JobAlertFields';
 import { Alert, CardSkeleton, ConfirmDialog, EmptyState, ErrorState, Icon, Modal } from '../../components/ui/feedback';
-import { SelectField, TextField } from '../../components/ui/form';
+import { ChoiceChips, Field, SelectField, TextField } from '../../components/ui/form';
 import { useAction, useCandidateProfile, useDocumentTitle, useUrlFilters } from '../../hooks/useData';
 import { alertApi, employerPublicApi, interviewApi, inviteApi, jobApi } from '../../services';
 import { formatDateTime, timeAgo, titleCase } from '../../utils/format';
@@ -163,11 +164,14 @@ export const CandidateInterviews = () => {
               </div>
               <p className="mt-2 text-sm text-brand-dark">{formatDateTime(iv.scheduledAt)} · {iv.durationMinutes} min · {titleCase(iv.mode)}</p>
               {iv.location && <p className="text-sm text-brand-gray">{iv.location}</p>}
-              {iv.meetingLink && (
-                <a href={iv.meetingLink} target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-brand-blue underline">
-                  Join meeting
-                </a>
-              )}
+              <div className="mt-1 flex flex-wrap items-center gap-4">
+                {iv.meetingLink && (
+                  <a href={iv.meetingLink} target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-brand-blue underline">
+                    Join meeting
+                  </a>
+                )}
+                <AddToCalendar interview={iv} jobTitle={iv.job?.title} company={iv.job?.orgSnapshot?.name} />
+              </div>
               {['scheduled', 'rescheduled'].includes(iv.status) && !iv.candidateResponse && (
                 <div className="mt-3 flex gap-2">
                   <Button size="sm" variant="primaryBlue" onClick={() => respond.mutate({ id: iv._id, response: 'accepted' })}>
@@ -186,11 +190,18 @@ export const CandidateInterviews = () => {
   );
 };
 
+const ALERT_CHANNELS = [
+  { value: 'email', label: 'E-mail' },
+  { value: 'whatsapp', label: 'WhatsApp' },
+  { value: 'push', label: 'Browser / app' },
+  { value: 'sms', label: 'SMS' },
+];
+
 const AlertForm = ({ alert, onClose }) => {
   const { data: me } = useCandidateProfile();
   const prefill = useQuery({ queryKey: ['alert-prefill'], queryFn: alertApi.prefill, enabled: !alert });
   const base = alert?.criteria || {};
-  const [form, setForm] = useState({ name: alert?.name || '', frequency: alert?.frequency || 'daily', ...criteriaForm(base) });
+  const [form, setForm] = useState({ name: alert?.name || '', frequency: alert?.frequency || 'daily', channels: (alert?.channels || ['email', 'push', 'whatsapp']).filter((c) => c !== 'in_app'), ...criteriaForm(base) });
   const [error, setError] = useState('');
   useEffect(() => {
     const p = prefill.data;
@@ -211,7 +222,7 @@ const AlertForm = ({ alert, onClose }) => {
         frequency: form.frequency,
         email: alert?.email || me?.user?.email,
         mobile: alert?.mobile || me?.user?.mobile,
-        channels: alert?.channels || ['email', 'in_app', 'push'],
+        channels: ['in_app', ...form.channels],
         criteria: toCriteria(form, base),
       };
       return alert ? alertApi.update(alert._id, body) : alertApi.create(body);
@@ -246,6 +257,9 @@ const AlertForm = ({ alert, onClose }) => {
           <TextField label="Job alert name" value={form.name} onChange={set('name')} maxLength={120} placeholder="e.g. Sales jobs in Jaipur" />
           <SelectField label="Job alert frequency" placeholder={null} options={FREQUENCIES} value={form.frequency} onChange={set('frequency')} />
         </div>
+        <Field label="Send me matching jobs on" hint={me?.user?.mobile ? `WhatsApp and SMS go to +91 ${me.user.mobile}` : 'Add your mobile number in Settings to get WhatsApp and SMS alerts'}>
+          <ChoiceChips multiple options={ALERT_CHANNELS} value={form.channels} onChange={set('channels')} />
+        </Field>
         <AlertCriteriaFields form={form} set={set} setForm={setForm} />
       </form>
     </Modal>

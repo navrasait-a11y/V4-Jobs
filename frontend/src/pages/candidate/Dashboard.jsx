@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import ProfileViewsCard from '../../components/candidate/ProfileViewsCard';
 import JobCard from '../../components/common/JobCard';
 import Button from '../../components/ui/Button';
 import { ProgressBar, Section, StatTile, StatusBadge } from '../../components/ui/data';
@@ -91,6 +92,7 @@ const Dashboard = () => {
         </div>
 
         <div className="space-y-4">
+          <ProfileViewsCard />
           {completion && (
             <Section title="Profile strength">
               <p className="mb-2 text-2xl font-bold text-brand-blue">{completion.score}%</p>

@@ -289,7 +289,7 @@ const RichTextEditor = ({ value = '', onChange, placeholder = 'Start writing…'
           {required && <span className="text-brand-red"> *</span>}
         </p>
       )}
-      <div className={clsx('rte flex flex-col overflow-hidden rounded-[var(--radius-input)] border bg-white', error ? 'border-brand-red' : 'border-[#D5DBE4] focus-within:border-[#98A2B3]', fullscreen && 'mx-auto h-full w-full max-w-5xl rounded-none sm:rounded-xl')}>
+      <div className={clsx('rte flex flex-col overflow-hidden rounded-[var(--radius-input)] border bg-white', error ? 'border-brand-red' : 'border-[#D5DBE4] focus-within:border-brand-blue focus-within:shadow-[0_0_0_3px_var(--color-brand-blue-tint)]', fullscreen && 'mx-auto h-full w-full max-w-5xl rounded-none sm:rounded-xl')}>
         {toolbar}
         {tableBar}
         {variables.length > 0 && !source && (

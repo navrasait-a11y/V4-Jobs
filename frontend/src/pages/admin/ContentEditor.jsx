@@ -266,7 +266,7 @@ const ContentEditor = ({ kind }) => {
                 onChange={setTitle}
                 placeholder={kind === 'blog' ? 'Post title' : 'Page title'}
                 aria-label="Title"
-                className={clsx('w-full rounded-lg border bg-white px-4 py-3 text-xl font-bold text-brand-dark outline-none placeholder:text-brand-gray-muted sm:text-2xl', errors.title ? 'border-brand-red' : 'border-transparent focus:border-[#98A2B3]')}
+                className={clsx('w-full rounded-lg border bg-white px-4 py-3 text-xl font-bold text-brand-dark outline-none placeholder:text-brand-gray-muted sm:text-2xl', errors.title ? 'border-brand-red' : 'border-transparent focus:border-brand-blue focus:shadow-[0_0_0_3px_var(--color-brand-blue-tint)]')}
               />
               {errors.title && <p className="mt-1 text-xs text-brand-red">{errors.title}</p>}
             </div>

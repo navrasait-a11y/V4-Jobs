@@ -11,6 +11,7 @@ import HierarchyField from '../../components/ui/HierarchyField';
 import useAuth from '../../hooks/useAuth';
 import { useAction, useDocumentTitle, useLookups, useUrlFilters } from '../../hooks/useData';
 import { authApi, orgApi } from '../../services';
+import { gstinHint } from '../../utils/gstin';
 import { formatDate, placeLabel, toInputMonth } from '../../utils/format';
 
 /*
@@ -137,7 +138,7 @@ const CompanyTab = ({ org }) => {
               <TextField label="Company website" inputMode="url" autoCapitalize="off" value={form.website} onChange={set('website')} placeholder="https://" />
               <TextField label="Public email" type="email" value={form.email} onChange={set('email')} />
               <TextField label="Public phone" inputMode="numeric" maxLength={10} value={form.phone} onChange={(e) => set('phone')(e.target.value.replace(/\D/g, ''))} />
-              <TextField label="GST number" value={form.gstNumber} onChange={(e) => set('gstNumber')(e.target.value.toUpperCase())} maxLength={15} />
+              <TextField label="GST number" value={form.gstNumber} onChange={(e) => set("gstNumber")(e.target.value.toUpperCase().replace(/s/g, ""))} maxLength={15} {...gstinHint(form.gstNumber)} />
               <TextField label="PAN number" value={form.panNumber} onChange={(e) => set('panNumber')(e.target.value.toUpperCase())} maxLength={10} />
             </Grid>
           </Block>
@@ -171,6 +172,45 @@ const CompanyTab = ({ org }) => {
 /* ------------------------------------------------------- hiring manager */
 
 /** "Who will manage hiring on this account?" The signed-in user's own recruiter details. */
+/** LinkedIn-style profile viewing mode: show who you are to candidates, or browse privately. */
+const ViewingMode = () => {
+  const { user, loadMe } = useAuth();
+  const isPrivate = Boolean(user.employer?.privateBrowsing);
+  const save = useAction((v) => orgApi.viewingMode(v), { success: (r) => (r?.private ? 'Private mode on' : 'Your name and company are now shown'), onSuccess: loadMe });
+  const options = [
+    { value: false, icon: 'badge', title: 'Your name and company', body: 'Candidates see that your company viewed their profile. Profiles you open feel more personal and candidates respond faster.' },
+    { value: true, icon: 'visibility_off', title: 'Private mode', body: 'Candidates only see "a recruiter" with your industry and city. Useful for confidential hiring.' },
+  ];
+  return (
+    <Section title="Profile viewing mode" className="mt-4">
+      <p className="mb-3 text-sm text-brand-gray">Choose what candidates see when you open their profile or application.</p>
+      <div className="grid gap-3 sm:grid-cols-2" role="radiogroup" aria-label="Profile viewing mode">
+        {options.map((o) => {
+          const on = isPrivate === o.value;
+          return (
+            <button
+              key={String(o.value)}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              disabled={save.isPending}
+              onClick={() => !on && save.mutate(o.value)}
+              className={`flex items-start gap-3 rounded-xl border p-4 text-left transition-colors ${on ? 'border-brand-blue bg-brand-blue-tint/60 ring-1 ring-brand-blue' : 'border-brand-border hover:border-brand-blue'}`}
+            >
+              <Icon name={o.icon} size={22} className={on ? 'text-brand-blue' : 'text-brand-gray-muted'} />
+              <span>
+                <span className="block text-sm font-semibold text-brand-dark">{o.title}</span>
+                <span className="mt-0.5 block text-xs text-brand-gray">{o.body}</span>
+              </span>
+              <span className={`ml-auto mt-0.5 h-4 w-4 shrink-0 rounded-full border-2 ${on ? 'border-brand-blue bg-brand-blue shadow-[inset_0_0_0_2px_#fff]' : 'border-[#B4BCC8]'}`} />
+            </button>
+          );
+        })}
+      </div>
+    </Section>
+  );
+};
+
 const HiringTab = () => {
   const { user, loadMe } = useAuth();
   const lookups = useLookups('gender', 'hiring_authority');
@@ -529,7 +569,12 @@ const Settings = () => {
         ]}
       />
       {filters.tab === 'company' && <CompanyTab key={org.updatedAt} org={org} />}
-      {(filters.tab === 'hiring' || filters.tab === 'account') && <HiringTab />}
+      {(filters.tab === 'hiring' || filters.tab === 'account') && (
+        <>
+          <HiringTab />
+          <ViewingMode />
+        </>
+      )}
       {filters.tab === 'offices' && <OfficesTab org={org} />}
       {filters.tab === 'verification' && <VerificationTab org={org} />}
       {filters.tab === 'security' && (

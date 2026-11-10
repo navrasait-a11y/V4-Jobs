@@ -152,6 +152,7 @@ export const searchJobs = {
   query: Joi.object({
     ...pagination,
     q: Joi.string().trim().max(200).allow(''),
+    exact: Joi.boolean(),
     keywords: csv, // up to 20 chips
     mandatory: csv, // starred keywords that must match
     allMandatory: Joi.boolean(),

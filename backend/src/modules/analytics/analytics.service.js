@@ -1,5 +1,6 @@
 import { resolveTimespan, daysAgo } from '../../shared/utils/timespan.js';
 import { ROLES, USER_STATUS } from '../../shared/constants/index.js';
+import { FREE_VISIBLE, viewerAccess } from '../candidates/profileViews.service.js';
 import Job from '../jobs/job.model.js';
 import User from '../users/user.model.js';
 import Candidate from '../candidates/candidate.model.js';
@@ -96,10 +97,10 @@ export async function candidateAnalytics(userId, q) {
     Application.countDocuments({ candidate: userId, createdAt: created, isViewed: true }),
     ProfileAccess.aggregate([
       { $match: { candidate: userId, type: 'view', createdAt: created } },
-      { $group: { _id: '$organization', count: { $sum: 1 }, last: { $max: '$createdAt' } } },
+      { $group: { _id: '$organization', count: { $sum: 1 }, last: { $max: '$createdAt' }, anonymous: { $max: '$anonymous' } } },
       { $sort: { last: -1 } },
       { $limit: 10 },
-      { $lookup: { from: 'organizations', localField: '_id', foreignField: '_id', as: 'org', pipeline: [{ $project: { name: 1, logo: 1, slug: 1 } }] } },
+      { $lookup: { from: 'organizations', localField: '_id', foreignField: '_id', as: 'org', pipeline: [{ $project: { name: 1, logo: 1, slug: 1, type: 1, industries: 1 } }] } },
       { $unwind: '$org' },
     ]),
     // Skill trends: demand for the candidate's skills in currently active jobs
@@ -111,6 +112,7 @@ export async function candidateAnalytics(userId, q) {
       { $limit: 25 },
     ]),
   ]);
+  const access = await viewerAccess(userId);
   const totalApps = apps.reduce((a, s) => a + s.count, 0);
   const mySkills = new Set((profile?.keySkills || []).map((s) => s.toLowerCase()));
   return {
@@ -124,7 +126,13 @@ export async function candidateAnalytics(userId, q) {
       viewedByRecruiters: viewedByEmployer,
       viewRate: totalApps ? +((viewedByEmployer / totalApps) * 100).toFixed(2) : 0,
     },
-    recentViewers: viewers.map((v) => ({ organization: v.org, views: v.count, lastViewedAt: v.last })),
+    // Same rule as "Who viewed your profile": free accounts see the latest few companies, private-mode recruiters stay hidden.
+    recentViewers: viewers.map((v, i) =>
+      v.anonymous || (!access.premium && viewers.slice(0, i).filter((x) => !x.anonymous).length >= FREE_VISIBLE)
+        ? { locked: !v.anonymous, anonymous: Boolean(v.anonymous), views: v.count, lastViewedAt: v.last, hint: { type: v.org.type, industry: v.org.industries?.[0] || '' } }
+        : { organization: { _id: v.org._id, name: v.org.name, logo: v.org.logo, slug: v.org.slug }, views: v.count, lastViewedAt: v.last },
+    ),
+    viewerAccess: access,
     skillTrends: skillDemand.map((s) => ({ skill: s._id, activeJobs: s.jobs, youHaveIt: mySkills.has(String(s._id).toLowerCase()) })),
     profileCompletion: profile?.profileCompletion || 0,
   };

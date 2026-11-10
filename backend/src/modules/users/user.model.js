@@ -79,6 +79,7 @@ const userSchema = new Schema(
       department: [String],
       functions: [String],
       hiringAuthority: String,
+      privateBrowsing: { type: Boolean, default: false }, // candidates see "a recruiter" instead of name + company
       permissions: { type: [String], enum: EMPLOYER_PERMISSIONS, default: undefined },
       quotas: quotaSchema,
       addedBy: { type: Schema.Types.ObjectId, ref: 'User' },

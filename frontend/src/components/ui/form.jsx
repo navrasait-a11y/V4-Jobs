@@ -3,11 +3,11 @@ import { useQuery } from '@tanstack/react-query';
 import { clsx } from 'clsx';
 import toast from 'react-hot-toast';
 import { Icon, Spinner } from './feedback';
-import { DateField, Select } from './pickers';
+import { DateField, FieldContext, MultiSelect, Select } from './pickers';
 import useDebounce from '../../hooks/useDebounce';
-import { lookupApi } from '../../services';
+import { lookupApi, searchApi } from '../../services';
+import SuggestGroups, { flattenGroups } from '../common/SuggestGroups';
 import useAuthStore from '../../store/useAuthStore';
-import { placeLabel } from '../../utils/format';
 
 const control = 'field-control w-full px-3 text-sm placeholder:text-brand-gray-muted';
 const errored = 'is-invalid';
@@ -20,7 +20,7 @@ export const Field = ({ label, required, error, hint, htmlFor, className = '', c
         {required && <span className="text-brand-red"> *</span>}
       </label>
     )}
-    {children}
+    <FieldContext.Provider value={{ label: typeof label === 'string' ? label : '', invalid: Boolean(error) }}>{children}</FieldContext.Provider>
     {error && (
       <p className="mt-1 text-xs text-brand-red" role="alert">
         {error}
@@ -113,8 +113,19 @@ export const CheckboxField = ({ label, description, className = '', ...props }) 
   </label>
 );
 
-export const ChoiceChips = ({ options = [], value, onChange, multiple = false, max, className = '' }) => {
+/**
+ * Pill choices. A multiple list longer than `dropdownAfter` options turns into a searchable
+ * MultiSelect dropdown, so long lists (industries, skills, benefits) never flood the form.
+ */
+export const ChoiceChips = ({ options = [], value, onChange, multiple = false, max, className = '', dropdownAfter = 8, placeholder, ariaLabel, invalid }) => {
   const items = options.map((o) => (typeof o === 'string' ? { value: o, label: o } : o));
+  if (multiple && items.length > dropdownAfter) {
+    return <MultiSelect className={className} value={value || []} onChange={onChange} options={items} max={max} placeholder={placeholder || (max ? `Select up to ${max}` : 'Select one or more')} ariaLabel={ariaLabel} title={ariaLabel} invalid={invalid} />;
+  }
+  return <ChipList items={items} value={value} onChange={onChange} multiple={multiple} max={max} className={className} />;
+};
+
+const ChipList = ({ items, value, onChange, multiple, max, className }) => {
   const selected = multiple ? value || [] : [value];
   const toggle = (v) => {
     if (!multiple) return onChange(v === value ? '' : v);
@@ -131,14 +142,29 @@ export const ChoiceChips = ({ options = [], value, onChange, multiple = false, m
           aria-pressed={selected.includes(o.value)}
           onClick={() => toggle(o.value)}
           className={clsx(
-            'rounded-md border px-3 py-1.5 text-[13px] font-medium transition-colors',
-            selected.includes(o.value) ? 'border-brand-blue bg-brand-blue-tint text-brand-blue' : 'border-brand-border text-brand-gray hover:border-brand-blue',
+            'inline-flex items-center gap-1 rounded-full border px-3.5 py-1.5 text-[13px] font-medium transition-all active:scale-[0.97]',
+            selected.includes(o.value) ? 'border-brand-blue bg-brand-blue-tint text-brand-blue shadow-[inset_0_0_0_1px_var(--color-brand-blue)]' : 'border-[#D5DBE4] bg-white text-brand-gray hover:border-brand-blue hover:text-brand-blue',
           )}
         >
+          {multiple && selected.includes(o.value) && <Icon name="check" size={14} />}
           {o.label}
         </button>
       ))}
     </div>
+  );
+};
+
+/** Option text with the typed part in bold (Naukri style suggestions). */
+const Highlight = ({ text = '', term = '' }) => {
+  const t = term.trim();
+  const i = t ? String(text).toLowerCase().indexOf(t.toLowerCase()) : -1;
+  if (i < 0) return text;
+  return (
+    <>
+      {text.slice(0, i)}
+      <b className="font-semibold text-brand-dark">{text.slice(i, i + t.length)}</b>
+      {text.slice(i + t.length)}
+    </>
   );
 };
 
@@ -161,6 +187,7 @@ export const SuggestField = ({ label, required, error, hint, className = '', loo
   const id = useId();
   const [text, setText] = useState('');
   const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(-1);
   const debounced = useDebounce(text, 250);
   const user = useAuthStore((s) => s.user);
   const close = React.useCallback(() => setOpen(false), []);
@@ -173,7 +200,10 @@ export const SuggestField = ({ label, required, error, hint, className = '', loo
     enabled: open && Boolean(lookup) && !disabled,
     staleTime: 5 * 60 * 1000,
   });
-  const options = [...new Set((data || []).map((o) => o.name))].filter((n) => !selected.includes(n));
+  // Starts-with matches first ("Rea" -> React before Analytical Reasoning), keeping the API's popularity order within each.
+  const needle = debounced.trim().toLowerCase();
+  const startsRank = (n) => (!needle ? 0 : n.toLowerCase().startsWith(needle) ? 0 : 1);
+  const options = [...new Set((data || []).map((o) => o.name))].filter((n) => !selected.includes(n)).sort((a, b) => startsRank(a) - startsRank(b));
   const showCreate = allowCreate && text.trim() && !options.some((o) => o.toLowerCase() === text.trim().toLowerCase());
 
   const pick = (name) => {
@@ -196,12 +226,12 @@ export const SuggestField = ({ label, required, error, hint, className = '', loo
   return (
     <Field label={label} required={required} error={error} hint={hint} htmlFor={id} className={className}>
       <div className="relative" ref={ref}>
-        <div className={clsx('flex min-h-11 flex-wrap items-center gap-1.5 rounded-[var(--radius-input)] border border-[#D5DBE4] bg-white px-2.5 py-1.5 transition-shadow focus-within:border-[#98A2B3]', error && 'border-brand-red')}>
+        <div className={clsx('field-control flex min-h-11 flex-wrap items-center gap-1.5 px-2.5 py-1.5', error && 'is-invalid')}>
           {selected.map((s) => (
-            <span key={s} className="inline-flex items-center gap-1 rounded-md bg-brand-blue-tint px-2 py-1 text-xs font-medium text-brand-blue">
-              {s}
-              <button type="button" aria-label={`Remove ${s}`} onClick={() => onChange(selected.filter((x) => x !== s))}>
-                <Icon name="close" size={13} />
+            <span key={s} className="inline-flex max-w-full items-center gap-1 rounded-full border border-brand-blue/30 bg-brand-blue-tint py-0.5 pl-2.5 pr-1 text-xs font-medium text-brand-blue">
+              <span className="truncate">{s}</span>
+              <button type="button" aria-label={`Remove ${s}`} onClick={() => onChange(selected.filter((x) => x !== s))} className="rounded-full p-0.5 hover:bg-brand-blue hover:text-white">
+                <Icon name="close" size={12} />
               </button>
             </span>
           ))}
@@ -209,18 +239,33 @@ export const SuggestField = ({ label, required, error, hint, className = '', loo
             id={id}
             autoComplete="off"
             value={multiple ? text : text || value || ''}
+            role="combobox"
+            aria-expanded={open}
             onChange={(e) => {
               setText(e.target.value);
               setOpen(true);
+              setActive(-1);
               if (!multiple) onChange(allowCreate ? e.target.value : '');
             }}
             onClick={() => setOpen(true)}
             onKeyDown={(e) => {
-              if (e.key === 'ArrowDown') setOpen(true);
-              if (e.key === 'Enter') {
+              const n = options.length + (showCreate ? 1 : 0);
+              if (e.key === 'ArrowDown') {
                 e.preventDefault();
-                if (options[0] && !showCreate) pick(options[0]);
+                setOpen(true);
+                setActive((a) => Math.min(a + 1, n - 1));
+              } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setActive((a) => Math.max(a - 1, -1));
+              } else if (e.key === 'Escape') {
+                setOpen(false);
+              } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (active >= 0 && active < options.length) pick(options[active]);
+                else if (active === options.length && showCreate) create();
+                else if (options[0] && !showCreate) pick(options[0]);
                 else if (showCreate) create();
+                setActive(-1);
               } else if (e.key === 'Backspace' && multiple && !text && selected.length) {
                 onChange(selected.slice(0, -1));
               }
@@ -232,17 +277,19 @@ export const SuggestField = ({ label, required, error, hint, className = '', loo
           {isFetching && <Spinner size={14} />}
         </div>
         {open && (options.length > 0 || showCreate) && (
-          <ul className="absolute z-30 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border border-brand-border bg-white py-1 shadow-[var(--shadow-hover)]">
-            {options.map((o) => (
+          <ul role="listbox" className="pop-in absolute z-30 mt-1.5 max-h-64 w-full overflow-y-auto rounded-xl border border-brand-border bg-white py-1 shadow-[var(--shadow-hover)]">
+            {!text.trim() && options.length > 0 && <li className="px-3 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-gray-muted">Popular</li>}
+            {options.map((o, i) => (
               <li key={o}>
-                <button type="button" onClick={() => pick(o)} className="block w-full px-3 py-2 text-left text-sm text-brand-dark hover:bg-brand-blue-tint">
-                  {o}
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => pick(o)} className={clsx('block w-full px-3 py-2 text-left text-sm text-brand-gray', i === active ? 'bg-brand-blue-tint' : 'hover:bg-brand-tint')}>
+                  <Highlight text={o} term={text} />
                 </button>
               </li>
             ))}
             {showCreate && (
               <li>
-                <button type="button" onClick={create} className="block w-full px-3 py-2 text-left text-sm font-medium text-brand-blue hover:bg-brand-blue-tint">
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={create} className={clsx('flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-brand-blue', active === options.length ? 'bg-brand-blue-tint' : 'hover:bg-brand-blue-tint')}>
+                  <Icon name="add" size={16} />
                   Add “{text.trim()}”
                 </button>
               </li>
@@ -258,9 +305,25 @@ export const SuggestField = ({ label, required, error, hint, className = '', loo
  * Free-text entries in box format instead of commas (Excel: keywords, e-mails). Enter, comma or Tab adds a box.
  * With `starred` / `onStarredChange`, each box gets a star that marks it mandatory.
  */
-export const TagInput = ({ label, required, error, hint, className = '', value = [], onChange, max = 20, placeholder = 'Type and press Enter', starred, onStarredChange, validate, maxLength = 100 }) => {
+/**
+ * Free-text chips (Enter / comma adds one). With `suggest` ("jobs" | "candidates" | "companies") it also
+ * shows grouped live suggestions while typing; arrow keys + Enter pick one.
+ */
+export const TagInput = ({ label, required, error, hint, className = '', value = [], onChange, max = 20, placeholder = 'Type and press Enter', starred, onStarredChange, validate, maxLength = 100, suggest }) => {
   const id = useId();
   const [text, setText] = useState('');
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(-1);
+  const close = React.useCallback(() => setOpen(false), []);
+  const boxRef = useOutsideClick(close);
+  const term = useDebounce(text.trim(), 200);
+  const sugg = useQuery({
+    queryKey: ['search-suggest', suggest, term],
+    queryFn: () => searchApi.suggest(term, suggest, 5),
+    enabled: Boolean(suggest) && open && term.length >= 2,
+    staleTime: 5 * 60 * 1000,
+  });
+  const matches = suggest && term.length >= 2 ? flattenGroups(sugg.data?.groups, (it) => value.some((v) => v.toLowerCase() === it.label.toLowerCase()), 8) : [];
   const stars = starred || [];
   const add = (raw) => {
     const parts = String(raw)
@@ -283,6 +346,7 @@ export const TagInput = ({ label, required, error, hint, className = '', value =
     }
     onChange(next);
     setText('');
+    setActive(-1);
   };
   const remove = (t) => {
     onChange(value.filter((x) => x !== t));
@@ -290,7 +354,8 @@ export const TagInput = ({ label, required, error, hint, className = '', value =
   };
   return (
     <Field label={label} required={required} error={error} hint={hint} htmlFor={id} className={className}>
-      <div className={clsx('flex min-h-11 flex-wrap items-center gap-1.5 rounded-[var(--radius-input)] border border-[#D5DBE4] bg-white px-2.5 py-1.5 focus-within:border-[#98A2B3]', error && 'border-brand-red')}>
+      <div className="relative" ref={boxRef}>
+      <div className={clsx('field-control flex min-h-11 flex-wrap items-center gap-1.5 px-2.5 py-1.5', error && 'is-invalid')}>
         {value.map((t) => {
           const on = stars.includes(t);
           return (
@@ -311,11 +376,26 @@ export const TagInput = ({ label, required, error, hint, className = '', value =
           id={id}
           autoComplete="off"
           value={text}
-          onChange={(e) => (e.target.value.includes(',') ? add(e.target.value) : setText(e.target.value))}
+          role={suggest ? 'combobox' : undefined}
+          aria-expanded={suggest ? open : undefined}
+          onChange={(e) => {
+            if (e.target.value.includes(',')) return add(e.target.value);
+            setText(e.target.value);
+            setActive(-1);
+            return setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
           onKeyDown={(e) => {
-            if ((e.key === 'Enter' || e.key === 'Tab') && text.trim()) {
+            if (e.key === 'ArrowDown' && matches.length) {
               e.preventDefault();
-              add(text);
+              setActive((a) => Math.min(a + 1, matches.length - 1));
+            } else if (e.key === 'ArrowUp' && matches.length) {
+              e.preventDefault();
+              setActive((a) => Math.max(a - 1, -1));
+            } else if (e.key === 'Escape') setOpen(false);
+            else if ((e.key === 'Enter' || e.key === 'Tab') && (text.trim() || active >= 0)) {
+              e.preventDefault();
+              add(active >= 0 && matches[active] ? matches[active].label : text);
             } else if (e.key === 'Backspace' && !text && value.length) remove(value[value.length - 1]);
           }}
           onBlur={() => text.trim() && add(text)}
@@ -323,99 +403,22 @@ export const TagInput = ({ label, required, error, hint, className = '', value =
           className="h-7 min-w-[120px] flex-1 bg-transparent text-sm text-brand-dark outline-none placeholder:text-brand-gray-muted"
         />
       </div>
-    </Field>
-  );
-};
-
-/** Location picker backed by /locations. value: place object (or array when multiple). */
-export const LocationField = ({ label, required, error, hint, className = '', multiple = false, max, value, onChange, placeholder = 'Search city or locality' }) => {
-  const id = useId();
-  const [text, setText] = useState('');
-  const [open, setOpen] = useState(false);
-  const debounced = useDebounce(text, 250);
-  const close = React.useCallback(() => setOpen(false), []);
-  const ref = useOutsideClick(close);
-  const selected = multiple ? value || [] : [];
-
-  const { data } = useQuery({
-    queryKey: ['locations', debounced],
-    queryFn: () => lookupApi.locations({ q: debounced || undefined, popular: debounced ? undefined : true, limit: 15 }),
-    enabled: open,
-    staleTime: 5 * 60 * 1000,
-  });
-
-  const toPlace = (l) => Object.fromEntries(Object.entries({ locality: l.locality, district: l.district, city: l.city, state: l.state, country: l.country, location: l._id }).filter(([, v]) => v));
-  const pick = (l) => {
-    const place = toPlace(l);
-    if (multiple) {
-      if (max && selected.length >= max) return toast.error(`You can add up to ${max} locations`);
-      onChange([...selected, place]);
-    } else onChange(place);
-    setText('');
-    setOpen(false);
-  };
-  const custom = () => {
-    const city = text.trim();
-    if (!city) return;
-    pick({ city, country: 'India' });
-  };
-
-  return (
-    <Field label={label} required={required} error={error} hint={hint} htmlFor={id} className={className}>
-      <div className="relative" ref={ref}>
-        <div className={clsx('flex min-h-11 flex-wrap items-center gap-1.5 rounded-[var(--radius-input)] border border-[#D5DBE4] bg-white px-2.5 py-1.5 transition-shadow focus-within:border-[#98A2B3]', error && 'border-brand-red')}>
-          <Icon name="location_on" size={18} className="text-brand-gray-muted" />
-          {selected.map((p, i) => (
-            <span key={`${p.city}-${i}`} className="inline-flex items-center gap-1 rounded-md bg-brand-blue-tint px-2 py-1 text-xs font-medium text-brand-blue">
-              {placeLabel(p)}
-              <button type="button" aria-label="Remove location" onClick={() => onChange(selected.filter((_, x) => x !== i))}>
-                <Icon name="close" size={13} />
-              </button>
-            </span>
-          ))}
-          <input
-            id={id}
-            autoComplete="off"
-            value={multiple ? text : text || placeLabel(value) || ''}
-            onChange={(e) => {
-              setText(e.target.value);
-              setOpen(true);
-              if (!multiple && value) onChange(null);
-            }}
-            onClick={() => setOpen(true)}
-            onKeyDown={(e) => {
-              if (e.key === 'ArrowDown') setOpen(true);
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                custom();
-              }
-            }}
-            placeholder={selected.length ? '' : placeholder}
-            className="h-7 min-w-[100px] flex-1 bg-transparent text-sm text-brand-dark outline-none placeholder:text-brand-gray-muted"
-          />
+      {open && suggest && (matches.length > 0 || sugg.data?.didYouMean) && (
+        <div className="pop-in absolute z-30 mt-1.5 max-h-72 w-full overflow-y-auto rounded-xl border border-brand-border bg-white p-1.5 shadow-[var(--shadow-hover)]">
+          <SuggestGroups items={matches} term={term} active={active} onPick={(it) => add(it.label)} didYouMean={sugg.data?.didYouMean} onDidYouMean={(w) => add(w)} />
+          {text.trim() && (
+            <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => add(text)} className="mt-1 flex w-full items-center gap-2 rounded-md border-t border-brand-border px-2 py-2 text-left text-sm text-brand-blue hover:bg-brand-tint">
+              <Icon name="add" size={16} /> Add “{text.trim()}”
+            </button>
+          )}
         </div>
-        {open && (data?.length > 0 || text.trim()) && (
-          <ul className="absolute z-30 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border border-brand-border bg-white py-1 shadow-[var(--shadow-hover)]">
-            {(data || []).map((l) => (
-              <li key={l._id}>
-                <button type="button" onClick={() => pick(l)} className="block w-full px-3 py-2 text-left text-sm text-brand-dark hover:bg-brand-blue-tint">
-                  {l.displayName}
-                </button>
-              </li>
-            ))}
-            {text.trim() && !(data || []).some((l) => l.city.toLowerCase() === text.trim().toLowerCase()) && (
-              <li>
-                <button type="button" onClick={custom} className="block w-full px-3 py-2 text-left text-sm font-medium text-brand-blue hover:bg-brand-blue-tint">
-                  Use “{text.trim()}”
-                </button>
-              </li>
-            )}
-          </ul>
-        )}
+      )}
       </div>
     </Field>
   );
 };
+
+export { default as LocationField } from './LocationField';
 
 export const FileDropzone = ({ accept, maxSizeMb = 5, hint, onFile, disabled, busy, label = 'Drag and drop your file here' }) => {
   const [over, setOver] = useState(false);

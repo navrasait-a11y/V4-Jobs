@@ -12,8 +12,9 @@ export function created(res, data = null, message = 'Created') {
   return ok(res, data, message, undefined, 201);
 }
 
-export function paginated(res, { items, page, limit, total }, message = 'OK') {
+export function paginated(res, { items, page, limit, total, meta }, message = 'OK') {
   return ok(res, items, message, {
+    ...(meta || {}),
     page,
     limit,
     total,

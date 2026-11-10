@@ -18,6 +18,7 @@ export const candidateNav = [
     title: 'Grow',
     items: [
       { label: 'Resume Builder', to: '/candidate/resume-builder', icon: 'article' },
+      { label: 'Who Viewed Me', to: '/candidate/profile-views', icon: 'visibility' },
       { label: 'Analytics', to: '/candidate/analytics', icon: 'bar_chart' },
       { label: 'Profile Booster', to: '/candidate/billing', icon: 'workspace_premium' },
     ],
@@ -63,6 +64,7 @@ export const adminNav = [
     items: [
       { label: 'Overview', to: '/admin/overview', icon: 'dashboard' },
       { label: 'Analytics', to: '/admin/analytics', icon: 'monitoring' },
+      { label: 'Search Insights', to: '/admin/search-insights', icon: 'query_stats' },
       { label: 'Platform Health', to: '/admin/health', icon: 'health_and_safety' },
     ],
   },

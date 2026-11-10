@@ -135,6 +135,7 @@ const jobSchema = new Schema(
     statusReason: String,
     labels: { type: [String], default: [], index: true },
     isFeatured: { type: Boolean, default: false, index: true },
+    featuredUntil: Date, // boosts end automatically (expireJobs)
     publishedAt: Date,
     deadlineAt: Date,
     expiresAt: { type: Date, index: true },

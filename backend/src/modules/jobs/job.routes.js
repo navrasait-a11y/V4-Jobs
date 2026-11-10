@@ -13,6 +13,7 @@ import Job from './job.model.js';
 import Organization from '../employers/organization.model.js';
 import * as s from './job.service.js';
 import * as v from './job.validation.js';
+import { correctQuery, suggestCompanies } from './job.spell.js';
 
 /* ----------------------------------------------------------------- public */
 
@@ -22,6 +23,12 @@ publicJobs.get('/', optionalAuth, validate(v.searchJobs), async (req, res) =>
   paginated(res, await s.searchJobs(req.query, req.user, parsePagination(req.query))),
 );
 publicJobs.get('/facets', validate(v.searchJobs), async (req, res) => ok(res, await s.searchFacets(req.query)));
+/** Search box helper: matching companies and a spelling suggestion for what is typed. */
+publicJobs.get('/suggest', validate({ query: Joi.object({ q: Joi.string().trim().max(100).allow('').required() }) }), async (req, res) => {
+  const [companies, didYouMean] = await Promise.all([suggestCompanies(req.query.q, 5), req.query.q.length >= 4 ? correctQuery(req.query.q, { allowPrefix: true }) : null]);
+  res.set('Cache-Control', 'public, max-age=300');
+  return ok(res, { companies, didYouMean });
+});
 publicJobs.get('/sitemap.xml', async (_req, res) => {
   res.type('application/xml').set('Cache-Control', 'public, max-age=3600');
   res.send(await s.jobsSitemap());
@@ -123,6 +130,9 @@ employerJobs.get('/:id/callbacks', requireEmployer(), validate({ params: idParam
 );
 employerJobs.get('/:id/share', requireEmployer(), validate({ params: idParam }), async (req, res) =>
   ok(res, s.shareLinks(await s.getManageableJob(req.user, req.params.id))),
+);
+employerJobs.post('/:id/boost', requireEmployer('job.manage_own', 'job.manage_all'), validate({ params: idParam }), async (req, res) =>
+  ok(res, await s.boostJob(req.user, req.params.id), `Job boosted for ${s.BOOST_DAYS} days`),
 );
 employerJobs.post('/:id/:action', requireEmployer('job.manage_own', 'job.manage_all'), validate(v.jobAction), async (req, res) =>
   ok(res, await s.changeJobState(req.user, req.params.id, req.params.action), 'Job updated'),

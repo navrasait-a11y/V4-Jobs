@@ -4,6 +4,7 @@ import { connectDatabase, disconnectDatabase } from './config/database.js';
 import { startWorker, closeQueue } from './shared/services/queue.service.js';
 import { startScheduler, stopScheduler } from './jobs/scheduler.js';
 import './jobs/handlers.js';
+import { captureError, initMonitoring } from './shared/services/monitoring.js';
 
 /**
  * Dedicated background worker (optional): run with RUN_WORKERS=false / RUN_SCHEDULER=false on the
@@ -14,7 +15,12 @@ async function main() {
     logger.fatal('REDIS_URL with REDIS_QUEUE_ENABLED=true is required for the standalone worker');
     process.exit(1);
   }
+  await initMonitoring();
   await connectDatabase();
+  process.on('unhandledRejection', (err) => {
+    logger.error({ err }, 'Unhandled promise rejection in worker');
+    captureError(err);
+  });
   startWorker();
   if (process.env.WORKER_RUN_SCHEDULER === 'true') startScheduler();
   const stop = async () => {

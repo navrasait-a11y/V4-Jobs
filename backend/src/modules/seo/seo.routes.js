@@ -8,6 +8,10 @@ import Job from '../jobs/job.model.js';
 import Organization from '../employers/organization.model.js';
 import JobEvent from '../events/event.model.js';
 import { Blog, Page } from '../cms/cms.models.js';
+import { optionalAuth } from '../../shared/middleware/auth.js';
+import { parsePagination } from '../../shared/utils/pagination.js';
+import ApiError from '../../shared/errors/ApiError.js';
+import { landingPage, landingSitemapPaths, resolveLanding } from './seo.landing.js';
 
 /**
  * SEO helpers for the web app (a single-page app):
@@ -29,17 +33,19 @@ const clip = (s = '', n = 160) => {
 };
 
 r.get('/sitemap.xml', async (_req, res) => {
-  const [jobs, orgs, events, blogs, pages] = await Promise.all([
+  const [jobs, orgs, events, blogs, pages, landings] = await Promise.all([
     Job.find({ status: JOB_STATUS.ACTIVE }).select('slug refreshedAt updatedAt').sort({ refreshedAt: -1 }).limit(40000).lean(),
     Organization.find({ status: USER_STATUS.ACTIVE }).select('slug username type updatedAt').limit(5000).lean(),
     JobEvent.find({ status: 'published' }).select('slug updatedAt').limit(2000).lean(),
     Blog.find({ status: 'published' }).select('slug updatedAt').limit(2000).lean(),
     Page.find({ status: 'published' }).select('slug updatedAt').lean(),
+    landingSitemapPaths(5000).catch(() => []),
   ]);
   const web = config.urls.web;
   const url = (loc, lastmod, freq = 'weekly') => `<url><loc>${esc(web + loc)}</loc>${lastmod ? `<lastmod>${new Date(lastmod).toISOString()}</lastmod>` : ''}<changefreq>${freq}</changefreq></url>`;
   const all = [
     ...STATIC.map((p) => url(p, null, 'daily')),
+    ...landings.map((p) => url(p, null, 'daily')),
     ...jobs.map((j) => url(`/jobs/${j.slug}`, j.refreshedAt || j.updatedAt, 'daily')),
     ...orgs.filter((o) => o.slug || o.username).map((o) => url(`/${o.type === 'consultancy' ? 'recruiters' : 'companies'}/${o.slug || o.username}`, o.updatedAt)),
     ...events.map((e) => url(`/events/${e.slug}`, e.updatedAt)),
@@ -54,6 +60,14 @@ const DEFAULT_META = { title: 'Freejobwala – Find jobs, hire talent', descript
 
 async function metaFor(path) {
   const [, section, slug] = path.split('?')[0].split('/');
+  if (section && !slug) {
+    const land = await resolveLanding(section);
+    if (land) {
+      const what = land.role ? `${land.role} jobs` : 'Jobs';
+      const where = land.city ? ` in ${land.city}` : '';
+      return { title: `${what}${where} | Freejobwala`, description: `Latest ${what.toLowerCase()}${where} from verified employers. Apply free on Freejobwala.` };
+    }
+  }
   if (section === 'jobs' && slug) {
     const j = await Job.findOne({ slug, status: { $in: [JOB_STATUS.ACTIVE, JOB_STATUS.EXPIRED, JOB_STATUS.CLOSED] } })
       .select('title description orgSnapshot consultancyClient locations salary kind')
@@ -89,5 +103,18 @@ r.get('/meta', validate({ query: Joi.object({ path: Joi.string().max(500).patter
   res.set('Cache-Control', 'public, max-age=300');
   return ok(res, { ...DEFAULT_META, ...meta, url: `${config.urls.web}${req.query.path}` });
 });
+
+/** Data for a landing page such as /sales-executive-jobs-in-jaipur. */
+r.get(
+  '/landing/:slug',
+  optionalAuth,
+  validate({ params: Joi.object({ slug: Joi.string().max(160).required() }), query: Joi.object({ page: Joi.number().integer().min(1).max(50), limit: Joi.number().integer().min(1).max(50) }) }),
+  async (req, res) => {
+    const data = await landingPage(req.params.slug, req.user, parsePagination(req.query));
+    if (!data) throw ApiError.notFound('Page not found');
+    if (!req.user) res.set('Cache-Control', 'public, max-age=300');
+    return ok(res, data);
+  },
+);
 
 export default r;

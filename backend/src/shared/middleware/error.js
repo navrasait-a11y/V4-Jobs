@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import logger from '../../config/logger.js';
 import config from '../../config/env.js';
 import ApiError from '../errors/ApiError.js';
+import { captureError } from '../services/monitoring.js';
 
 export function notFound(req, _res, next) {
   next(ApiError.notFound(`Route ${req.method} ${req.originalUrl} not found`, 'ROUTE_NOT_FOUND'));
@@ -30,6 +31,7 @@ export function errorHandler(err, req, res, _next) {
   } else if (apiErr.statusCode >= 500) {
     logger.error({ err, requestId: req.id }, apiErr.message);
   }
+  if (!apiErr || apiErr.statusCode >= 500) captureError(err, { requestId: req.id, path: req.route?.path || req.originalUrl.split('?')[0], method: req.method, userId: req.user?._id, role: req.user?.role });
 
   const status = apiErr?.statusCode || 500;
   const body = {

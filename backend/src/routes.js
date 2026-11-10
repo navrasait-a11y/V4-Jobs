@@ -5,6 +5,7 @@ import { ROLES } from './shared/constants/index.js';
 import authRoutes from './modules/auth/auth.routes.js';
 import commonRoutes from './modules/common/common.routes.js';
 import { publicRouter as masterDataPublic, adminRouter as masterDataAdmin } from './modules/masterdata/masterdata.routes.js';
+import searchRoutes from './modules/search/search.routes.js';
 import candidateRoutes from './modules/candidates/candidate.routes.js';
 import { employerMeRouter, employerPublicRouter } from './modules/employers/employer.routes.js';
 import { publicJobs, employerJobs } from './modules/jobs/job.routes.js';
@@ -38,6 +39,7 @@ api.use('/auth', authRoutes);
 api.use('/webhooks', webhookRoutes); // provider callbacks (Brevo)
 api.use('/', commonRoutes);
 api.use('/', masterDataPublic);
+api.use('/search', searchRoutes);
 api.use('/candidates', candidateRoutes);
 api.use('/jobs', publicJobs);
 api.use('/', candidateApplications); // /jobs/:id/apply, /jobs/:id/guest-apply, /applications

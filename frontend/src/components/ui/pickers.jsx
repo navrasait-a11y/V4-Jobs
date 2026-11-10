@@ -1,8 +1,11 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { clsx } from 'clsx';
 import { addMonths, eachDayOfInterval, endOfMonth, endOfWeek, format, isSameDay, isSameMonth, isValid, parse, startOfMonth, startOfWeek } from 'date-fns';
 import { Icon } from './feedback';
+
+/** Set by <Field> so a control inside it can name its dropdown sheet and show the error state. */
+export const FieldContext = createContext({ label: '', invalid: false });
 
 const isPhone = () => window.matchMedia('(max-width: 639px)').matches;
 
@@ -10,7 +13,7 @@ const isPhone = () => window.matchMedia('(max-width: 639px)').matches;
  * Floating panel rendered in a portal so modals and scroll areas never clip it.
  * Opens below the anchor, flips up when there is no room, and becomes a bottom sheet on phones.
  */
-export const Popover = ({ anchorRef, open, onClose, width, title, children, panelRef }) => {
+export const Popover = ({ anchorRef, open, onClose, width, minWidth = 0, title, children, panelRef }) => {
   const [style, setStyle] = useState(null);
   const [phone, setPhone] = useState(false);
   const ownRef = useRef(null);
@@ -23,7 +26,7 @@ export const Popover = ({ anchorRef, open, onClose, width, title, children, pane
       if (!a) return;
       setPhone(isPhone());
       const h = ref.current?.offsetHeight || 280;
-      const w = width || a.width;
+      const w = Math.min(Math.max(width || a.width, minWidth), window.innerWidth - 16);
       const below = window.innerHeight - a.bottom;
       const top = below < h + 12 && a.top > h + 12 ? a.top - h - 6 : a.bottom + 6;
       setStyle({ top, left: Math.max(8, Math.min(a.left, window.innerWidth - w - 8)), width: w });
@@ -35,7 +38,7 @@ export const Popover = ({ anchorRef, open, onClose, width, title, children, pane
       window.removeEventListener('resize', place);
       window.removeEventListener('scroll', place, true);
     };
-  }, [open, anchorRef, width, ref]);
+  }, [open, anchorRef, width, minWidth, ref]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -342,3 +345,133 @@ export const DateField = ({ id, value, onChange, mode = 'date', min, max, disabl
   );
 };
 
+
+/**
+ * Multi-select dropdown (Naukri style): the field shows the picked values as removable chips; the
+ * panel has search, checkboxes, "Select all" / "Clear" and a Done button. Becomes a bottom sheet on
+ * phones (Popover). value: string[]; options: string[] | { value, label }[].
+ */
+export const MultiSelect = ({ id, value = [], onChange, options = [], placeholder = 'Select', max, title: titleProp, invalid: invalidProp, disabled, className = '', ariaLabel: ariaProp, chipLimit = 3 }) => {
+  const field = useContext(FieldContext);
+  const ariaLabel = ariaProp || field.label || undefined;
+  const title = titleProp || field.label || undefined;
+  const invalid = invalidProp || field.invalid;
+  const items = useMemo(() => normalize(options), [options]);
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const btnRef = useRef(null);
+  const searchRef = useRef(null);
+  const selected = value || [];
+  const labelOf = (v) => items.find((o) => String(o.value) === String(v))?.label || v;
+  const shown = q ? items.filter((o) => o.label.toLowerCase().includes(q.toLowerCase())) : items;
+  const close = useCallback(() => {
+    setOpen(false);
+    setQ('');
+  }, []);
+  useEffect(() => {
+    if (open && items.length > 8) setTimeout(() => searchRef.current?.focus(), 0);
+  }, [open, items.length]);
+
+  const toggle = (v) => {
+    if (selected.includes(v)) return onChange(selected.filter((x) => x !== v));
+    if (max && selected.length >= max) return undefined;
+    return onChange([...selected, v]);
+  };
+  const atMax = Boolean(max && selected.length >= max);
+
+  return (
+    <div className={clsx('relative', className)}>
+      <div
+        ref={btnRef}
+        id={id}
+        role="combobox"
+        tabIndex={disabled ? -1 : 0}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        aria-label={ariaLabel || title || placeholder}
+        aria-invalid={invalid || undefined}
+        aria-disabled={disabled || undefined}
+        onClick={() => !disabled && setOpen((o) => !o)}
+        onKeyDown={(e) => {
+          if (disabled) return;
+          if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
+            e.preventDefault();
+            setOpen(true);
+          } else if (e.key === 'Escape') close();
+          else if (e.key === 'Backspace' && selected.length) onChange(selected.slice(0, -1));
+        }}
+        className={clsx('field-control flex min-h-11 w-full cursor-pointer items-center gap-1.5 px-2.5 py-1.5 text-left text-sm', invalid && 'is-invalid', open && 'is-open', disabled && 'cursor-not-allowed opacity-60')}
+      >
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+          {!selected.length && <span className="px-0.5 text-brand-gray-muted">{placeholder}</span>}
+          {selected.slice(0, chipLimit).map((v) => (
+            <span key={v} className="inline-flex max-w-full items-center gap-1 rounded-full border border-brand-blue/30 bg-brand-blue-tint py-0.5 pl-2.5 pr-1 text-xs font-medium text-brand-blue">
+              <span className="truncate">{labelOf(v)}</span>
+              <button
+                type="button"
+                aria-label={`Remove ${labelOf(v)}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onChange(selected.filter((x) => x !== v));
+                }}
+                className="rounded-full p-0.5 hover:bg-brand-blue hover:text-white"
+              >
+                <Icon name="close" size={12} />
+              </button>
+            </span>
+          ))}
+          {selected.length > chipLimit && <span className="rounded-full bg-brand-tint px-2 py-0.5 text-xs font-semibold text-brand-gray">+{selected.length - chipLimit} more</span>}
+        </div>
+        <Icon name="expand_more" size={20} className={clsx('shrink-0 text-brand-gray-muted transition-transform duration-150', open && 'rotate-180')} />
+      </div>
+      <Popover anchorRef={btnRef} open={open} onClose={close} title={title || ariaLabel || placeholder} minWidth={260}>
+        {items.length > 8 && (
+          <div className="border-b border-brand-border p-2">
+            <div className="relative">
+              <Icon name="search" size={16} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-brand-gray-muted" />
+              <input ref={searchRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && close()} placeholder="Search" aria-label="Search options" className="h-9 w-full rounded-md border border-brand-border pl-8 pr-2 text-sm outline-none focus:border-brand-blue focus:shadow-[0_0_0_3px_var(--color-brand-blue-tint)]" />
+            </div>
+          </div>
+        )}
+        <div className="flex items-center justify-between border-b border-brand-border px-3 py-1.5 text-xs">
+          <span className="text-brand-gray">
+            {selected.length ? `${selected.length} selected` : 'None selected'}
+            {max ? ` · up to ${max}` : ''}
+          </span>
+          <span className="flex gap-3">
+            {!max && shown.length > 1 && (
+              <button type="button" onClick={() => onChange([...new Set([...selected, ...shown.map((o) => o.value)])])} className="font-semibold text-brand-blue">
+                Select all
+              </button>
+            )}
+            {selected.length > 0 && (
+              <button type="button" onClick={() => onChange([])} className="font-semibold text-brand-red">
+                Clear
+              </button>
+            )}
+          </span>
+        </div>
+        <ul role="listbox" aria-multiselectable="true" className="max-h-64 overflow-y-auto py-1">
+          {shown.map((o) => {
+            const on = selected.includes(o.value);
+            const blocked = !on && atMax;
+            return (
+              <li key={o.value} role="option" aria-selected={on}>
+                <label className={clsx('flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm', on ? 'bg-brand-blue-tint/60 text-brand-dark' : 'text-brand-dark hover:bg-brand-tint', blocked && 'cursor-not-allowed opacity-45')}>
+                  <input type="checkbox" checked={on} disabled={blocked} onChange={() => toggle(o.value)} />
+                  <span className="flex-1">{o.label}</span>
+                </label>
+              </li>
+            );
+          })}
+          {!shown.length && <li className="px-3 py-4 text-center text-sm text-brand-gray-muted">No match for “{q}”</li>}
+        </ul>
+        <div className="flex justify-end border-t border-brand-border p-2">
+          <button type="button" onClick={close} className="rounded-md bg-brand-blue px-4 py-1.5 text-sm font-semibold text-white hover:bg-brand-blue-dark">
+            Done
+          </button>
+        </div>
+      </Popover>
+    </div>
+  );
+};

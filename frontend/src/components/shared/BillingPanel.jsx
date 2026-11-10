@@ -14,33 +14,55 @@ const Plans = ({ audience, active }) => {
   const [buying, setBuying] = useState(null);
   const { data: plans, isPending, refetch } = useQuery({ queryKey: ['plans', audience], queryFn: () => billingApi.plans(audience) });
   if (isPending) return <CardSkeleton />;
+  const main = (plans || []).filter((p) => p.tier !== 'addon');
+  const addons = (plans || []).filter((p) => p.tier === 'addon');
+  const card = (p, addon) => {
+    const current = !addon && (active?.plan === p._id || active?.plan?._id === p._id);
+    return (
+      <div key={p._id} className={clsx('flex flex-col rounded-xl border bg-white p-5', current ? 'border-brand-blue' : 'border-brand-border')}>
+        <div className="flex items-center justify-between gap-2">
+          <p className="font-bold text-brand-dark">{p.name}</p>
+          {current && <Badge tone="blue">Current</Badge>}
+        </div>
+        <p className="mt-2 text-2xl font-bold text-brand-blue">{p.price ? formatCurrency(p.price) : 'Free'}</p>
+        <p className="text-xs text-brand-gray-muted">
+          {p.durationDays} days{p.price ? ' · excl. GST' : ''}
+        </p>
+        <ul className="mt-3 flex-1 space-y-1.5 text-sm text-brand-gray">
+          {(p.highlights || []).map((h) => (
+            <li key={h} className="flex gap-1.5">
+              <Icon name="check" size={16} className="text-brand-green" /> {h}
+            </li>
+          ))}
+        </ul>
+        {addon && (
+          <p className="mt-2 text-xs text-brand-gray-muted">
+            Adds{' '}
+            {Object.entries(p.credits || {})
+              .filter(([, v]) => v)
+              .map(([k, v]) => `${formatNumber(v)} ${k.replace(/_/g, ' ')}`)
+              .join(', ') || 'credits'}{' '}
+            to your account. Your current plan stays as it is.
+          </p>
+        )}
+        {p.price > 0 && (
+          <Button size="sm" variant={addon ? 'outline' : 'primary'} className="mt-4" onClick={() => setBuying(p)}>
+            {addon ? 'Add pack' : 'Buy now'}
+          </Button>
+        )}
+      </div>
+    );
+  };
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      {(plans || []).map((p) => {
-        const current = active?.plan === p._id || active?.plan?._id === p._id;
-        return (
-          <div key={p._id} className={clsx('flex flex-col rounded-xl border bg-white p-5', current ? 'border-brand-blue' : 'border-brand-border')}>
-            <div className="flex items-center justify-between gap-2">
-              <p className="font-bold text-brand-dark">{p.name}</p>
-              {current && <Badge tone="blue">Current</Badge>}
-            </div>
-            <p className="mt-2 text-2xl font-bold text-brand-blue">{p.price ? formatCurrency(p.price) : 'Free'}</p>
-            <p className="text-xs text-brand-gray-muted">{p.durationDays} days{p.price ? ' · excl. GST' : ''}</p>
-            <ul className="mt-3 flex-1 space-y-1.5 text-sm text-brand-gray">
-              {(p.highlights || []).map((h) => (
-                <li key={h} className="flex gap-1.5">
-                  <Icon name="check" size={16} className="text-brand-green" /> {h}
-                </li>
-              ))}
-            </ul>
-            {p.price > 0 && (
-              <Button size="sm" variant="primary" className="mt-4" onClick={() => setBuying(p)}>
-                Buy now
-              </Button>
-            )}
-          </div>
-        );
-      })}
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">{main.map((p) => card(p, false))}</div>
+      {addons.length > 0 && (
+        <div>
+          <h3 className="mb-1 text-[15px] font-bold text-brand-dark">Add-on packs</h3>
+          <p className="mb-3 text-sm text-brand-gray">Need more resume views or featured jobs? Top up without changing your plan.</p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">{addons.map((p) => card(p, true))}</div>
+        </div>
+      )}
       {buying && (
         <PlanCheckout
           plan={buying}

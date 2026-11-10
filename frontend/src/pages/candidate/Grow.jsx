@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import ProfileViewsCard from '../../components/candidate/ProfileViewsCard';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import BillingPanel from '../../components/shared/BillingPanel';
 import { PageHeader, Section, SimpleSelect, StatTile } from '../../components/ui/data';
 import { ErrorState } from '../../components/ui/feedback';
 import { useDocumentTitle } from '../../hooks/useData';
 import { analyticsApi } from '../../services';
-import { TIMESPAN_OPTIONS, formatDate } from '../../utils/format';
+import { TIMESPAN_OPTIONS } from '../../utils/format';
 
 export { ResumeBuilder } from './ResumeBuilder';
 
@@ -49,17 +50,7 @@ export const CandidateAnalytics = () => {
             </ResponsiveContainer>
           </div>
         </Section>
-        <Section title="Companies viewing you">
-          {!d?.recentViewers?.length && <p className="text-sm text-brand-gray">No views yet.</p>}
-          <ul className="space-y-2 text-sm">
-            {d?.recentViewers?.map((v, i) => (
-              <li key={v.organization?._id || i} className="flex justify-between gap-2">
-                <span className="truncate text-brand-dark">{v.organization?.name || 'Employer'}</span>
-                <span className="shrink-0 text-xs text-brand-gray-muted">{formatDate(v.lastViewedAt)}</span>
-              </li>
-            ))}
-          </ul>
-        </Section>
+        <ProfileViewsCard />
       </div>
       {d?.skillTrends?.length > 0 && (
         <Section title="Skills in demand" className="mt-4">

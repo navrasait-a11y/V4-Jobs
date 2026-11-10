@@ -1,3 +1,4 @@
+import config from '../../config/env.js';
 import ApiError from '../../shared/errors/ApiError.js';
 import { ROLES } from '../../shared/constants/index.js';
 import { escapeRegex, normalizeEmail, normalizeMobile } from '../../shared/utils/helpers.js';
@@ -322,7 +323,10 @@ async function deliverDigest(alert, jobs) {
   if (!fresh.length) return false;
   const user = await User.findById(alert.user).select('fullName notificationPrefs status').lean();
   if (!user || user.status !== 'active' || user.notificationPrefs?.jobAlerts === false) return false;
-  const channels = ['in_app', 'push', ...(alert.channels?.includes('email') ? ['email'] : []), ...(alert.channels?.includes('whatsapp') ? ['whatsapp'] : [])];
+  // The candidate picks the channels; older alerts (saved before push / SMS could be chosen) keep push on.
+  const picked = alert.channels || [];
+  const legacy = !picked.some((c) => ['push', 'sms', 'whatsapp'].includes(c));
+  const channels = ['in_app', ...['push', 'email', 'whatsapp', 'sms'].filter((c) => picked.includes(c) || (c === 'push' && legacy))];
   await notify(alert.user, {
     type: 'job_alert',
     title: `${fresh.length} new job${fresh.length > 1 ? 's' : ''} for "${alert.name}"`,
@@ -332,6 +336,9 @@ async function deliverDigest(alert, jobs) {
       .join(', '),
     data: { screen: 'job_alert', alertId: String(alert._id) },
     channels,
+    whatsapp: {
+      text: [`*${fresh.length} new job${fresh.length > 1 ? 's' : ''} for "${alert.name}"*`, ...fresh.slice(0, 5).map((job) => `• ${job.title}${job.orgSnapshot?.name ? ` - ${job.orgSnapshot.name}` : ''}${job.locations?.[0]?.city ? `, ${job.locations[0].city}` : ''}\n${config.urls.web}/jobs/${job.slug}`)].join('\n'),
+    },
     email: {
       template: 'jobAlert',
       vars: {

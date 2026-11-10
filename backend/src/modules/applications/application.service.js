@@ -25,6 +25,7 @@ import { score } from '../matching/matching.service.js';
 import { trackUsage } from '../billing/usage.service.js';
 import { logActivity } from '../activity/activity.service.js';
 import { refreshDerived, withRelocationFlags } from '../candidates/candidate.service.js';
+import { recordProfileView } from '../candidates/profileViews.service.js';
 
 const STAGE_LABEL = {
   applied: 'Applied',
@@ -426,6 +427,7 @@ async function getScopedApplication(user, id) {
 
 export async function getResponse(user, id) {
   const app = await getScopedApplication(user, id);
+  if (user.role === 'employer') recordProfileView({ candidateId: app.candidate, member: user, source: 'application', jobId: app.job });
   if (!app.isViewed && !isAdmin(user)) {
     app.isViewed = true;
     app.viewedAt = new Date();

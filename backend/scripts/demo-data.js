@@ -23,7 +23,7 @@ import Organization from '../src/modules/employers/organization.model.js';
 import Job from '../src/modules/jobs/job.model.js';
 import Candidate from '../src/modules/candidates/candidate.model.js';
 import { Application, Interview } from '../src/modules/applications/application.model.js';
-import { Follow, SavedJob } from '../src/modules/engagement/engagement.models.js';
+import { Follow, ProfileAccess, SavedJob } from '../src/modules/engagement/engagement.models.js';
 import { JobAlert } from '../src/modules/alerts/alert.model.js';
 import JobEvent from '../src/modules/events/event.model.js';
 import { Notification } from '../src/modules/notifications/notification.model.js';
@@ -251,6 +251,23 @@ async function populate(password, track) {
     track('JobAlert', await JobAlert.create({ user: c.user._id, name: `${c.title} in ${c.city.city}`, email: c.user.email, mobile: c.user.mobile, frequency: pick(['daily', 'weekly'], i), isActive: true, channels: ['email', 'in_app'], criteria: { jobTitle: c.title, keySkills: c.keySkills, locations: [c.city], kind: 'any' } }));
     track('Notification', await Notification.create({ user: c.user._id, type: 'job_alert', title: `New ${c.title} jobs for you`, body: `Matching jobs in ${c.city.city}`, data: { screen: 'job_alert' } }));
   }
+  // "Who viewed your profile": recruiter views over the last 60 days (removed with the candidate by demo:remove).
+  const SOURCES = ['search', 'application', 'search', 'recommended', 'invite'];
+  const views = [];
+  for (const [i, c] of candidates.entries()) {
+    const viewers = orgs.slice(0, 4 + (i % 5));
+    for (const [k, { org, owner }] of viewers.entries()) {
+      const repeats = 1 + ((i + k) % 3);
+      for (let r = 0; r < repeats; r += 1) {
+        views.push({ organization: org._id, member: owner._id, candidate: c.user._id, type: 'view', source: pick(SOURCES, i + k + r), anonymous: k === 3 && i % 2 === 0, createdAt: new Date(now - ((k * 7 + r * 11 + i) % 60) * DAY - k * 3600 * 1000) });
+      }
+    }
+  }
+  if (views.length) {
+    await ProfileAccess.collection.insertMany(views);
+    for (const c of candidates) await Candidate.updateOne({ user: c.user._id }, { $set: { 'stats.profileViews': views.filter((v) => String(v.candidate) === String(c.user._id)).length, 'stats.searchAppearances': 40 + (views.length % 90) } });
+  }
+
   for (const [i, { org, owner }] of orgs.slice(0, 3).entries()) {
     const start = new Date(now + (i + 4) * DAY);
     track('JobEvent', await JobEvent.create({ uid: `DEMO-EVT-0${i + 1}`, organization: org._id, createdBy: owner._id, title: `${org.name} walk-in drive`, slug: `${slug(org.name)}-walk-in-demo`, description: 'Meet the hiring team in person and interview on the same day.', mode: i === 1 ? 'virtual' : 'walk_in', venue: { address: 'Demo Business Park', city: pick(CITIES, i).city, state: pick(CITIES, i).state }, startAt: start, endAt: new Date(start.getTime() + 6 * 3600 * 1000), jobs: jobs.filter((j) => String(j.organization) === String(org._id)).slice(0, 3).map((j) => j._id), status: 'published' }));

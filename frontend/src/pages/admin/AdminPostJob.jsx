@@ -2,7 +2,9 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import JobPostForm, { JOB_BLANK, jobFormErrors, jobToForm, toJobPayload } from '../../components/employer/JobPostForm';
+import JobPostForm, { JOB_BLANK, JOB_STEPS, jobFormErrors, jobToForm, toJobPayload } from '../../components/employer/JobPostForm';
+import JobReview from '../../components/employer/JobReview';
+import { StepNav, Stepper, useSteps } from '../../components/ui/stepper';
 import Button from '../../components/ui/Button';
 import { PageHeader, SearchInput, Section } from '../../components/ui/data';
 import { Alert } from '../../components/ui/feedback';
@@ -11,6 +13,8 @@ import { useAction, useDocumentTitle } from '../../hooks/useData';
 import useDebounce from '../../hooks/useDebounce';
 import { adminApi } from '../../services';
 import { titleCase } from '../../utils/format';
+
+const STEPS = [...JOB_STEPS, { key: 'publish', title: 'Review & publish', short: 'Publish', fields: ['organizationId', 'publish', 'featured'] }];
 
 /** PRD: "Admin can Post a Job Vacancy, Post an Internship on Behalf of employers" (scratch or prefill). */
 const AdminPostJob = () => {
@@ -24,6 +28,7 @@ const AdminPostJob = () => {
   const [errors, setErrors] = useState({});
   const [publish, setPublish] = useState(true);
   const [featured, setFeatured] = useState(false);
+  const { step, reached, goTo, next, validateAll, showErrors, errorSteps, last } = useSteps(STEPS, { validate: () => jobFormErrors(form, { requireAll: publish }), setErrors, watch: form });
 
   const orgs = useQuery({ queryKey: ['admin-employers-pick', debounced], queryFn: () => adminApi.list('/employers', { q: debounced || undefined, status: 'active', limit: 20 }), enabled: !org });
   const previous = useQuery({
@@ -53,6 +58,7 @@ const AdminPostJob = () => {
     },
     onError: (e) => {
       setErrors(e.fieldErrors || {});
+      showErrors(e.fieldErrors);
       toast.error(e.message);
     },
   });
@@ -81,6 +87,7 @@ const AdminPostJob = () => {
                 setOrg(null);
                 setPrefillFrom('');
                 setForm(JOB_BLANK);
+                goTo(0);
               }}
             >
               Change employer
@@ -111,30 +118,45 @@ const AdminPostJob = () => {
           className="mt-4 space-y-4"
           onSubmit={(e) => {
             e.preventDefault();
-            const local = jobFormErrors(form, { requireAll: publish });
-            setErrors(local);
-            if (Object.keys(local).length) return toast.error('Please fix the highlighted fields');
+            if (!last) return next();
+            if (!validateAll()) return undefined;
             return submit.mutate();
           }}
+          onKeyDown={(e) => e.key === 'Enter' && e.target.tagName === 'INPUT' && !last && e.preventDefault()}
         >
-          <Section title="How do you want to start?">
-            <SelectField
-              label={`Begin from scratch or prefill from this employer's previous ${form.kind === 'internship' ? 'internships' : 'jobs'}`}
-              placeholder="Begin from scratch"
-              options={(previous.data?.data || []).map((j) => ({ value: j._id, label: `${j.title} (${j.status})` }))}
-              value={prefillFrom}
-              onChange={(e) => pickPrefill(e.target.value)}
-            />
-          </Section>
-          {Object.keys(errors).length > 0 && <Alert tone="error">{Object.values(errors).join('. ')}</Alert>}
-          <JobPostForm form={form} setForm={setForm} errors={errors} consultancy={org.type === 'consultancy'} />
-          <div className="sticky bottom-0 flex flex-wrap items-center justify-end gap-4 surface p-3">
-            <CheckboxField label="Publish now" checked={publish} onChange={(e) => setPublish(e.target.checked)} />
-            <CheckboxField label="Featured" checked={featured} onChange={(e) => setFeatured(e.target.checked)} />
-            <Button type="submit" size="sm" variant="primary" loading={submit.isPending}>
-              {publish ? (form.kind === 'internship' ? 'Post internship' : 'Post job') : 'Save draft'}
-            </Button>
-          </div>
+          <Stepper steps={STEPS} current={step} reached={reached} onStep={goTo} errorSteps={errorSteps(errors)} />
+          {step === 0 && (
+            <Section title="How do you want to start?">
+              <SelectField
+                label={`Begin from scratch or prefill from this employer's previous ${form.kind === 'internship' ? 'internships' : 'jobs'}`}
+                placeholder="Begin from scratch"
+                options={(previous.data?.data || []).map((j) => ({ value: j._id, label: `${j.title} (${j.status})` }))}
+                value={prefillFrom}
+                onChange={(e) => pickPrefill(e.target.value)}
+              />
+            </Section>
+          )}
+          {last && Object.keys(errors).length > 0 && <Alert tone="error">{Object.values(errors).join('. ')}</Alert>}
+          {!last && <JobPostForm step={step} form={form} setForm={setForm} errors={errors} consultancy={org.type === 'consultancy'} />}
+          {last && (
+            <>
+              <JobReview form={form} onEdit={goTo} />
+              <Section title="Publishing">
+                <div className="flex flex-wrap gap-6">
+                  <CheckboxField label="Publish now" description="Off saves a draft in the employer's account" checked={publish} onChange={(e) => setPublish(e.target.checked)} />
+                  <CheckboxField label="Featured" description="Shows the job in featured slots" checked={featured} onChange={(e) => setFeatured(e.target.checked)} />
+                </div>
+              </Section>
+            </>
+          )}
+          <StepNav
+            current={step}
+            total={STEPS.length}
+            onBack={() => goTo(step - 1)}
+            onNext={next}
+            submitLabel={publish ? (form.kind === 'internship' ? 'Post internship' : 'Post job') : 'Save draft'}
+            loading={submit.isPending}
+          />
         </form>
       )}
     </div>

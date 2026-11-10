@@ -20,6 +20,17 @@
       "destination": "/api/seo?path=/:section/:slug"
     },
     {
+      "source": "/:landing((?:[a-z0-9-]+-)?jobs(?:-in-[a-z0-9-]+)?)",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*([Ff]acebookexternalhit|[Ff]acebot|WhatsApp|[Tt]witterbot|LinkedInBot|Slackbot|TelegramBot|Discordbot|Pinterest|SkypeUriPreview|redditbot|Embedly|vkShare|Applebot|Snapchat).*"
+        }
+      ],
+      "destination": "/api/seo?path=/:landing"
+    },
+    {
       "source": "/",
       "has": [
         {

@@ -246,7 +246,7 @@ export const Taxonomy = () => {
         }}
       >
         {parentType && <SimpleSelect ariaLabel="Parent of the new option" value={parent} onChange={setParent} options={[{ value: '', label: 'Choose parent' }, ...parentOptions]} className="min-w-[220px] max-w-xs" />}
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New option" aria-label="New option" maxLength={200} className="h-10 min-w-[180px] flex-1 rounded-lg border border-brand-border px-3 text-sm outline-none focus:border-[#98A2B3]" />
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New option" aria-label="New option" maxLength={200} className="h-10 min-w-[180px] flex-1 rounded-lg border border-brand-border px-3 text-sm outline-none focus:border-brand-blue focus:shadow-[0_0_0_3px_var(--color-brand-blue-tint)]" />
         <Button type="submit" size="sm" variant="primary" loading={add.isPending}>
           Add option
         </Button>
@@ -342,7 +342,7 @@ export const SupportChat = () => {
                 if (text.trim()) send.mutate();
               }}
             >
-              <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Reply" aria-label="Reply" className="h-10 min-w-0 flex-1 rounded-lg border border-brand-border px-3 text-sm outline-none focus:border-[#98A2B3]" />
+              <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Reply" aria-label="Reply" className="h-10 min-w-0 flex-1 rounded-lg border border-brand-border px-3 text-sm outline-none focus:border-brand-blue focus:shadow-[0_0_0_3px_var(--color-brand-blue-tint)]" />
               <Button type="submit" size="sm" variant="primaryBlue" loading={send.isPending}>
                 Send
               </Button>

@@ -48,10 +48,12 @@ const EmployerLanding = lazy(() => import('../pages/public/EmployerLanding'));
 const AdminLogin = lazy(() => import('../pages/public/AdminLogin'));
 const AdminPostJob = lazy(() => import('../pages/admin/AdminPostJob'));
 const SystemHealth = lazy(() => import('../pages/admin/SystemHealth'));
+const SearchInsights = lazy(() => import('../pages/admin/SearchInsights'));
 const AdminJobEdit = lazy(() => import('../pages/admin/AdminJobEdit'));
 const ContentEditor = lazy(() => import('../pages/admin/ContentEditor'));
 const PostJobGuest = lazy(() => import('../pages/public/PostJobGuest'));
 const NotFound = lazy(() => import('../pages/public/NotFound'));
+const SeoLanding = lazy(() => import('../pages/public/SeoLanding'));
 
 const Notifications = lazy(() => import('../pages/shared/Notifications'));
 const Messages = lazy(() => import('../pages/shared/Messages'));
@@ -62,6 +64,7 @@ const apps = () => import('../pages/candidate/Applications');
 const lists = () => import('../pages/candidate/JobLists');
 const grow = () => import('../pages/candidate/Grow');
 const CandidateDashboard = lazy(() => import('../pages/candidate/Dashboard'));
+const ProfileViews = lazy(() => import('../pages/candidate/ProfileViews'));
 const CandidateProfile = lazy(profile);
 const CompleteProfile = named(profile, 'CompleteProfile');
 const CandidateApplications = named(apps, 'Applications');
@@ -139,6 +142,8 @@ const AppRoutes = () => (
         <Route path="/career-advice/:id" element={<CareerAdviceDetail />} />
         <Route path="/help-center" element={<HelpCenter />} />
         <Route path="/about-us" element={<CmsPage slug="about-us" />} />
+        {/* /jobs-in-jaipur, /sales-jobs, /sales-jobs-in-jaipur; anything else renders the 404 page */}
+        <Route path="/:landing" element={<SeoLanding />} />
         <Route path="/legal/:slug" element={<CmsPage />} />
       </Route>
 
@@ -168,6 +173,7 @@ const AppRoutes = () => (
           <Route path="/candidate/notifications" element={<Notifications />} />
           <Route path="/candidate/resume-builder" element={<ResumeBuilder />} />
           <Route path="/candidate/analytics" element={<CandidateAnalytics />} />
+          <Route path="/candidate/profile-views" element={<ProfileViews />} />
           <Route path="/candidate/billing" element={<CandidateBilling />} />
           <Route path="/candidate/settings" element={<CandidateSettings />} />
         </Route>
@@ -221,6 +227,7 @@ const AppRoutes = () => (
           <Route path="/admin/career-advice/new" element={<ContentEditor kind="blog" key="blog-new" />} />
           <Route path="/admin/career-advice/:id/edit" element={<ContentEditor kind="blog" />} />
           <Route path="/admin/health" element={<SystemHealth />} />
+          <Route path="/admin/search-insights" element={<SearchInsights />} />
           {ADMIN_MODULES.map((name) => (
             <Route key={name} path={`/admin/${name}`} element={<AdminModule name={name} />} />
           ))}

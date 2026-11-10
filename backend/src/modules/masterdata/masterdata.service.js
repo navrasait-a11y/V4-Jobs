@@ -1,4 +1,5 @@
 import ApiError from '../../shared/errors/ApiError.js';
+import { smartLocations } from './locationSearch.js';
 import { escapeRegex, slugify } from '../../shared/utils/helpers.js';
 import { parseWorkbook } from '../../shared/utils/excel.js';
 import { Lookup, Location, LOOKUP_TYPES, PARENT_TYPE, USER_ADDABLE_TYPES } from './masterdata.models.js';
@@ -209,13 +210,10 @@ function normalizeLocation(data) {
   return doc;
 }
 
-export async function searchLocations({ q, state, city, limit = 20, popular }) {
-  const filter = { isActive: true };
-  if (state) filter.state = new RegExp(`^${escapeRegex(state)}$`, 'i');
-  if (city) filter.city = new RegExp(`^${escapeRegex(city)}$`, 'i');
-  if (popular) filter.isPopular = true;
-  if (q) filter.searchKey = new RegExp(`(^|, )${escapeRegex(q.toLowerCase().slice(0, 60))}`);
-  return Location.find(filter).select('-searchKey -__v').sort({ isPopular: -1, city: 1 }).limit(Math.min(limit, 100)).lean();
+/** Ranked, alias- and typo-aware location search (see locationSearch.js). Returns the list only. */
+export async function searchLocations({ q, state, city, limit = 20, popular, withJobs }) {
+  const { items } = await smartLocations({ q, state, city, limit, popular: q ? undefined : popular, withJobs });
+  return items;
 }
 
 export const listStates = (country = 'India') => Location.distinct('state', { country, isActive: true });

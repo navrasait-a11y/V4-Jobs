@@ -93,6 +93,7 @@ const Jobs = () => {
   const close = useAction(employerJobApi.close, { ...inv, success: 'Job closed', onSuccess: () => setConfirm(null) });
   const trash = useAction(employerJobApi.trash, { ...inv, success: 'Job deleted', onSuccess: () => setConfirm(null) });
   const refresh = useAction(employerJobApi.refresh, { ...inv, success: 'Job refreshed' });
+  const boost = useAction(employerJobApi.boost, { invalidate: ['employer-jobs', 'subscriptions'], success: 'Job boosted. It now shows at the top for 15 days', onSuccess: () => setConfirm(null) });
   const publish = useAction((id) => employerJobApi.publish(id), { ...inv, success: 'Job published', invalidate: ['employer-jobs', 'subscriptions'] });
   const duplicate = useAction(employerJobApi.duplicate, { success: 'Draft copy created', onSuccess: (j) => navigate(`/employer/jobs/${j._id}/edit`) });
   const bulk = useAction((file) => employerJobApi.bulkImport(file, false), { ...inv, success: (r) => `Imported ${r.created ?? r.imported ?? ''} jobs as drafts` });
@@ -153,7 +154,7 @@ const Jobs = () => {
           </>
         }
       />
-      <UpsellNotice error={publish.error || bulk.error} />
+      <UpsellNotice error={publish.error || bulk.error || boost.error} />
       <Tabs className="mb-4" value={filters.status || ''} onChange={(status) => setFilters({ status })} tabs={STATUSES.map((s) => ({ value: s, label: s ? titleCase(s) : 'All', count: s ? counts[s] || 0 : undefined }))} />
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <SearchInput className="w-full sm:max-w-xs" value={q} onChange={setQ} placeholder="Search title, job ID or client" />
@@ -188,6 +189,16 @@ const Jobs = () => {
                 <Icon name="refresh" size={18} />
               </button>
             )}
+            {j.status === 'active' &&
+              (j.isFeatured ? (
+                <span className="mx-1 inline-flex items-center gap-0.5 rounded-full bg-brand-orange-tint px-2 py-0.5 text-[11px] font-semibold text-brand-orange-dark" title={j.featuredUntil ? `Boosted till ${new Date(j.featuredUntil).toLocaleDateString()}` : 'Featured'}>
+                  <Icon name="rocket_launch" size={13} /> Boosted
+                </span>
+              ) : (
+                <button className={iconBtn} title="Boost job (1 featured credit)" aria-label="Boost job" onClick={() => setConfirm({ type: 'boost', job: j })}>
+                  <Icon name="rocket_launch" size={18} />
+                </button>
+              ))}
             {j.callbackRequests > 0 && (
               <button className={`${iconBtn} relative`} title="Call back requests" aria-label={`${j.callbackRequests} call back requests`} onClick={() => setFilters({ callbacks: j._id })}>
                 <Icon name="phone_callback" size={18} />
@@ -218,12 +229,12 @@ const Jobs = () => {
       <ConfirmDialog
         open={Boolean(confirm)}
         onClose={() => setConfirm(null)}
-        title={confirm?.type === 'close' ? 'Close this job?' : 'Delete this job?'}
-        message={confirm?.job?.title}
-        danger
-        confirmLabel={confirm?.type === 'close' ? 'Close job' : 'Delete'}
-        loading={close.isPending || trash.isPending}
-        onConfirm={() => (confirm.type === 'close' ? close : trash).mutate(confirm.job._id)}
+        title={confirm?.type === 'boost' ? 'Boost this job?' : confirm?.type === 'close' ? 'Close this job?' : 'Delete this job?'}
+        message={confirm?.type === 'boost' ? `"${confirm.job.title}" moves to the top of search and featured slots for 15 days. Uses 1 featured job credit.` : confirm?.job?.title}
+        danger={confirm?.type !== 'boost'}
+        confirmLabel={confirm?.type === 'boost' ? 'Boost for 15 days' : confirm?.type === 'close' ? 'Close job' : 'Delete'}
+        loading={close.isPending || trash.isPending || boost.isPending}
+        onConfirm={() => ({ boost, close, trash })[confirm.type].mutate(confirm.job._id)}
       />
     </div>
   );

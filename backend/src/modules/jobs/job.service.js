@@ -1,5 +1,7 @@
 import config from '../../config/env.js';
 import ApiError from '../../shared/errors/ApiError.js';
+import { expandTerm } from '../search/synonyms.js';
+import { recordSearch } from '../search/searchStats.service.js';
 import { JOB_STATUS, JOB_KIND, ID_PREFIX, USER_STATUS, ROLES } from '../../shared/constants/index.js';
 import { generateUid } from '../../shared/models/counter.model.js';
 import { uniqueSlug, escapeRegex, omit, normalizeMobile, toArray } from '../../shared/utils/helpers.js';
@@ -21,6 +23,8 @@ import { createEmployerAccount } from '../users/account.service.js';
 import { sendActivation } from '../employers/employer.service.js';
 import { getWeights, scoreMatch } from '../matching/matching.service.js';
 import { buildJobSearch, jobSort, LIST_FIELDS } from './job.query.js';
+import { correctQuery } from './job.spell.js';
+import logger from '../../config/logger.js';
 import { moneyRequestIn } from './job.screening.js';
 import { logActivity } from '../activity/activity.service.js';
 import { touchUsage, citiesWithin } from '../masterdata/masterdata.service.js';
@@ -184,6 +188,7 @@ export async function publishJob(user, jobId, { featured = false, skipCredits = 
   }
   if (featured) {
     job.isFeatured = true;
+    job.featuredUntil = new Date(now.getTime() + BOOST_DAYS * 86400000);
     job.labels = [...new Set([...(job.labels || []), 'featured'])];
   }
   job.publishedAt = job.publishedAt || now;
@@ -284,16 +289,90 @@ async function resolveSearch(query) {
   return q;
 }
 
+const LIST_PROJECTION = Object.fromEntries(LIST_FIELDS.split(/\s+/).filter(Boolean).map((f) => [f, 1]));
+
+/**
+ * Typo-tolerant search through an Atlas Search index (ATLAS_SEARCH_INDEX). Returns null when the
+ * index is not configured or the query fails, so the caller falls back to the text index.
+ */
+async function atlasSearch(filter, sort, skip, limit) {
+  const index = config.search.atlasIndex;
+  const text = filter.$text?.$search;
+  if (!index || !text) return null;
+  const { $text: _t, ...rest } = filter;
+  const fuzzy = { maxEdits: 1, prefixLength: 1 };
+  const relevance = Boolean(sort.score);
+  try {
+    const [res] = await Job.aggregate([
+      {
+        $search: {
+          index,
+          compound: {
+            should: [
+              { text: { query: text, path: ['title', 'designation'], fuzzy, score: { boost: { value: 6 } } } },
+              { text: { query: text, path: ['keySkills', 'roles'], fuzzy, score: { boost: { value: 4 } } } },
+              { text: { query: text, path: 'orgSnapshot.name', fuzzy, score: { boost: { value: 2 } } } },
+              { text: { query: text, path: 'description', fuzzy: { maxEdits: 1, prefixLength: 2 } } },
+            ],
+            minimumShouldMatch: 1,
+          },
+        },
+      },
+      { $match: rest },
+      {
+        $facet: {
+          items: [...(relevance ? [] : [{ $sort: sort }]), { $skip: skip }, { $limit: limit }, { $project: LIST_PROJECTION }],
+          total: [{ $count: 'n' }],
+        },
+      },
+    ]);
+    return { items: res?.items || [], total: res?.total?.[0]?.n || 0 };
+  } catch (err) {
+    logger.warn({ err: err.message }, 'Atlas Search failed, using the text index');
+    return null;
+  }
+}
+
+async function runJobSearch(q, sortKey, skip, limit) {
+  const filter = buildJobSearch(q);
+  const hasText = Boolean(filter.$text);
+  const sort = jobSort(sortKey, hasText);
+  const atlas = await atlasSearch(filter, sort, skip, limit);
+  if (atlas) return atlas;
+  const projection = hasText ? { score: { $meta: 'textScore' } } : {};
+  const [items, total] = await Promise.all([Job.find(filter, projection).select(LIST_FIELDS).sort(sort).skip(skip).limit(limit).lean(), Job.countDocuments(filter)]);
+  return { items, total };
+}
+
 export async function searchJobs(query, viewer, { page, limit, skip }) {
   const q = await resolveSearch(query);
   if (viewer?.role === ROLES.CANDIDATE) q.excludeOrganizations = await hiddenOrganizationIdsFor(viewer._id);
-  const filter = buildJobSearch(q);
-  const hasText = Boolean(filter.$text);
-  const projection = hasText ? { score: { $meta: 'textScore' } } : {};
-  const [items, total] = await Promise.all([
-    Job.find(filter, projection).select(LIST_FIELDS).sort(jobSort(query.sort, hasText)).skip(skip).limit(limit).lean(),
-    Job.countDocuments(filter),
-  ]);
+  // Short forms ("sde", "hr", "ca") also match their full forms in job posts.
+  const extra = [query.q, ...toArray(query.keywords)].filter(Boolean).flatMap((t) => expandTerm(t));
+  if (extra.length) q.q = [q.q, ...extra].filter(Boolean).join(' ');
+  let { items, total } = await runJobSearch(q, query.sort, skip, limit);
+
+  // Spelling help (search text and keyword chips): no results -> show the corrected search instead;
+  // only a few results -> offer the correction as "Did you mean".
+  const meta = {};
+  const keywords = toArray(query.keywords).filter(Boolean);
+  const terms = [query.q, ...keywords].filter(Boolean);
+  if (terms.length && total < 3 && !query.exact) {
+    const fixed = await Promise.all(terms.map((t) => correctQuery(t).catch(() => null)));
+    if (fixed.some(Boolean)) {
+      const off = query.q ? 1 : 0;
+      const fixedQ = query.q ? fixed[0] || query.q : query.q;
+      const fixedKeywords = keywords.map((k, i) => fixed[i + off] || k);
+      const label = [fixedQ, ...fixedKeywords].filter(Boolean).join(', ');
+      if (total === 0) {
+        const retry = await runJobSearch({ ...q, q: fixedQ, keywords: fixedKeywords }, query.sort, skip, limit);
+        if (retry.total) {
+          ({ items, total } = retry);
+          Object.assign(meta, { correctedQuery: label, originalQuery: terms.join(', '), correctedKeywords: fixedKeywords, correctedQ: fixedQ || '' });
+        }
+      } else Object.assign(meta, { didYouMean: label, correctedKeywords: fixedKeywords, correctedQ: fixedQ || '' });
+    }
+  }
 
   let enriched = items.map(publicJob);
   if (viewer?.role === ROLES.CANDIDATE && items.length) {
@@ -319,30 +398,45 @@ export async function searchJobs(query, viewer, { page, limit, skip }) {
       }).catch(() => {});
     }
   }
-  return { items: enriched, total, page, limit };
+  if (page === 1 && !query.exact) recordSearch({ terms: [meta.correctedQuery ? meta.correctedQuery : query.q, ...(meta.correctedKeywords || keywords)], scope: 'jobs', total });
+  return { items: enriched, total, page, limit, meta };
 }
 
-/** Facet counts for the search side-filters (work mode, experience buckets, departments ...). */
+const FACETS = {
+  workMode: [{ $unwind: '$jobModes' }, { $group: { _id: '$jobModes', count: { $sum: 1 } } }, { $sort: { count: -1 } }, { $limit: 10 }],
+  department: [{ $unwind: '$departments' }, { $group: { _id: '$departments', count: { $sum: 1 } } }, { $sort: { count: -1 } }, { $limit: 20 }],
+  industry: [{ $unwind: '$industries' }, { $group: { _id: '$industries', count: { $sum: 1 } } }, { $sort: { count: -1 } }, { $limit: 20 }],
+  location: [{ $unwind: '$locations' }, { $group: { _id: '$locations.city', count: { $sum: 1 } } }, { $sort: { count: -1 } }, { $limit: 20 }],
+  role: [{ $unwind: '$roles' }, { $group: { _id: '$roles', count: { $sum: 1 } } }, { $sort: { count: -1 } }, { $limit: 20 }],
+  postedBy: [{ $group: { _id: '$organizationType', count: { $sum: 1 } } }],
+  companyType: [{ $group: { _id: '$orgSnapshot.employerType', count: { $sum: 1 } } }, { $sort: { count: -1 } }],
+  employmentType: [{ $unwind: '$employmentTypes' }, { $group: { _id: '$employmentTypes', count: { $sum: 1 } } }, { $sort: { count: -1 } }],
+  kind: [{ $group: { _id: '$kind', count: { $sum: 1 } } }],
+};
+const present = (v) => v !== undefined && v !== '' && !(Array.isArray(v) && !v.length);
+
+/**
+ * Facet counts for the search side-filters. Disjunctive (Naukri style): a group's counts ignore that
+ * group's own filter, so ticking "Data" still lists the other departments to add.
+ */
 export async function searchFacets(query) {
-  const filter = buildJobSearch(await resolveSearch(query));
-  const [res] = await Job.aggregate([
-    { $match: filter },
-    {
-      $facet: {
-        workMode: [{ $unwind: '$jobModes' }, { $group: { _id: '$jobModes', count: { $sum: 1 } } }, { $sort: { count: -1 } }, { $limit: 10 }],
-        department: [{ $unwind: '$departments' }, { $group: { _id: '$departments', count: { $sum: 1 } } }, { $sort: { count: -1 } }, { $limit: 20 }],
-        industry: [{ $unwind: '$industries' }, { $group: { _id: '$industries', count: { $sum: 1 } } }, { $sort: { count: -1 } }, { $limit: 20 }],
-        location: [{ $unwind: '$locations' }, { $group: { _id: '$locations.city', count: { $sum: 1 } } }, { $sort: { count: -1 } }, { $limit: 20 }],
-        role: [{ $unwind: '$roles' }, { $group: { _id: '$roles', count: { $sum: 1 } } }, { $sort: { count: -1 } }, { $limit: 20 }],
-        postedBy: [{ $group: { _id: '$organizationType', count: { $sum: 1 } } }],
-        companyType: [{ $group: { _id: '$orgSnapshot.employerType', count: { $sum: 1 } } }, { $sort: { count: -1 } }],
-        employmentType: [{ $unwind: '$employmentTypes' }, { $group: { _id: '$employmentTypes', count: { $sum: 1 } } }, { $sort: { count: -1 } }],
-        kind: [{ $group: { _id: '$kind', count: { $sum: 1 } } }],
-      },
-    },
+  const own = Object.keys(FACETS).filter((k) => present(query[k]));
+  const shared = Object.fromEntries(Object.entries(FACETS).filter(([k]) => !own.includes(k)));
+  const run = async (q, facets) => {
+    if (!Object.keys(facets).length) return {};
+    const [res] = await Job.aggregate([{ $match: buildJobSearch(await resolveSearch(q)) }, { $facet: facets }]);
+    return res || {};
+  };
+  const parts = await Promise.all([
+    run(query, shared),
+    ...own.map((k) => {
+      const { [k]: _drop, ...rest } = query;
+      return run(rest, { [k]: FACETS[k] });
+    }),
   ]);
+  const res = Object.assign({}, ...parts);
   const clean = (arr) => (arr || []).filter((x) => x._id).map((x) => ({ value: x._id, count: x.count }));
-  return Object.fromEntries(Object.entries(res || {}).map(([k, v]) => [k, clean(v)]));
+  return Object.fromEntries(Object.keys(FACETS).map((k) => [k, clean(res[k])]));
 }
 
 export async function getPublicJob(idOrSlug, viewer) {
@@ -694,8 +788,32 @@ export async function removeJobSearch(user, id) {
 
 /* -------------------------------------------------------------- scheduler */
 
+export const BOOST_DAYS = 15;
+
+/**
+ * Boost a live job: uses 1 featured-job credit, pins it to the featured slots and moves it to the top
+ * of search for BOOST_DAYS days. Boosting again while a boost runs is refused (no double charge).
+ */
+export async function boostJob(user, jobId) {
+  const job = await getManageableJob(user, jobId);
+  if (job.status !== JOB_STATUS.ACTIVE) throw ApiError.badRequest('Only live jobs can be boosted', undefined, 'INVALID_STATE');
+  const now = new Date();
+  if (job.isFeatured && (!job.featuredUntil || job.featuredUntil > now)) throw ApiError.conflict('This job is already boosted', 'ALREADY_BOOSTED');
+  const member = user.role === ROLES.EMPLOYER ? user : await User.findById(job.postedBy);
+  if (!isAdmin(user)) await consume(member, 'featured_job', 1, { ref: String(job._id) });
+  job.isFeatured = true;
+  job.featuredUntil = new Date(now.getTime() + BOOST_DAYS * 86400000);
+  job.refreshedAt = now;
+  job.labels = [...new Set([...(job.labels || []), 'featured'])];
+  await job.save();
+  logActivity({ user }, { user: user._id, organization: job.organization, type: 'job_boosted', description: job.title, meta: { jobId: job._id, until: job.featuredUntil } });
+  return job.toObject();
+}
+
 export async function expireJobs() {
   const now = new Date();
+  // Boosts that ran out go back to normal listing.
+  await Job.updateMany({ isFeatured: true, featuredUntil: { $lte: now } }, { $set: { isFeatured: false }, $pull: { labels: 'featured' }, $unset: { featuredUntil: 1 } });
   const toExpire = await Job.find({ status: JOB_STATUS.ACTIVE, $or: [{ expiresAt: { $lte: now } }, { deadlineAt: { $lte: now } }] })
     .select('organization')
     .lean();

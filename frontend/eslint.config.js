@@ -26,7 +26,7 @@ export default defineConfig([
   },
   {
     // Config files run in Node, not the browser, so they need Node globals (process, __dirname, etc.).
-    files: ['vite.config.js', 'eslint.config.js', '*.config.{js,mjs,cjs}', 'api/**/*.js'],
+    files: ['vite.config.js', 'eslint.config.js', '*.config.{js,mjs,cjs}', 'api/**/*.js', 'e2e/**/*.js'],
     languageOptions: { globals: globals.node },
   },
   {

@@ -21,12 +21,21 @@ const crud = (base) => ({
   remove: (id) => del(`${base}/${id}`),
 });
 
+/** Grouped suggestions for search boxes: scope jobs | candidates | companies | locations. */
+export const searchApi = {
+  suggest: (q, scope = 'jobs', limit = 6) => get('/search/suggest', { q, scope, limit }),
+  trending: (scope = 'jobs', limit = 8) => get('/search/trending', { scope, limit }),
+  forYou: () => get('/search/for-you'),
+  track: (term, scope = 'jobs') => post('/search/track', { term, scope }),
+};
+
 export const lookupApi = {
   types: () => get('/master-data/types'),
   search: (type, params) => get(`/master-data/${type}`, params),
   bulk: (types) => get('/master-data/bulk', { types: types.join(',') }),
   suggest: (type, name) => post(`/master-data/${type}/suggest`, { name }),
   locations: (params) => get('/locations', params),
+  nearest: (lat, lng) => post('/locations/nearest', { lat, lng }),
   states: () => get('/locations/states'),
   cities: (state) => get('/locations/cities', { state }),
   settings: () => get('/settings/public'),
@@ -66,6 +75,7 @@ export const candidateApi = {
   me: () => get('/candidates/me'),
   update: (body) => patch('/candidates/me', body),
   dashboard: () => get('/candidates/me/dashboard'),
+  profileViews: (params) => get('/candidates/me/profile-views', params),
   addItem: (kind, body) => post(`/candidates/me/${kind}`, body),
   updateItem: (kind, id, body) => patch(`/candidates/me/${kind}/${id}`, body),
   removeItem: (kind, id) => del(`/candidates/me/${kind}/${id}`),
@@ -79,9 +89,14 @@ export const candidateApi = {
   remove: (reason) => del('/candidates/me', { reason }),
 };
 
+export const seoApi = {
+  landing: (slug, params) => get(`/seo/landing/${encodeURIComponent(slug)}`, params),
+};
+
 export const jobApi = {
   search: (params) => list('/jobs', params),
   facets: (params) => get('/jobs/facets', params),
+  suggest: (q) => get('/jobs/suggest', { q }),
   recommended: (params) => list('/jobs/recommended', params),
   saved: (params) => list('/jobs/saved', params),
   get: (idOrSlug) => get(`/jobs/${idOrSlug}`),
@@ -223,6 +238,7 @@ export const cmsApi = {
 export const orgApi = {
   get: () => get('/employer/organization'),
   update: (body) => patch('/employer/organization', body),
+  viewingMode: (isPrivate) => patch('/employer/organization/viewing-mode', { private: isPrivate }),
   logo: (file) => upload('/employer/organization/logo', { logo: file }),
   cover: (file) => upload('/employer/organization/cover', { cover: file }),
   addOffice: (body) => post('/employer/organization/offices', body),
@@ -251,6 +267,7 @@ export const employerJobApi = {
   publish: (id, body = {}) => post(`/employer/jobs/${id}/publish`, body),
   close: (id) => post(`/employer/jobs/${id}/close`),
   refresh: (id) => post(`/employer/jobs/${id}/refresh`),
+  boost: (id) => post(`/employer/jobs/${id}/boost`),
   trash: (id) => post(`/employer/jobs/${id}/trash`),
   duplicate: (id) => post(`/employer/jobs/${id}/duplicate`),
   collaborators: (id, memberIds) => put(`/employer/jobs/${id}/collaborators`, { memberIds }),

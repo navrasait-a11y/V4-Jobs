@@ -9,8 +9,10 @@ import { startWorker, closeQueue } from './shared/services/queue.service.js';
 import { registerChatSocket } from './modules/chat/chat.socket.js';
 import { startScheduler, stopScheduler } from './jobs/scheduler.js';
 import './jobs/handlers.js';
+import { captureError, flushMonitoring, initMonitoring } from './shared/services/monitoring.js';
 
 async function bootstrap() {
+  await initMonitoring();
   await connectDatabase();
   getRedis();
 
@@ -35,7 +37,7 @@ async function bootstrap() {
     server.close();
     stopScheduler();
     await Promise.allSettled([closeSocket(), closeQueue()]);
-    await Promise.allSettled([disconnectDatabase(), closeRedis()]);
+    await Promise.allSettled([disconnectDatabase(), closeRedis(), flushMonitoring()]);
     clearTimeout(force);
     logger.info('Shutdown complete');
     process.exit(0);
@@ -43,8 +45,12 @@ async function bootstrap() {
 
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
-  process.on('unhandledRejection', (err) => logger.error({ err }, 'Unhandled promise rejection'));
+  process.on('unhandledRejection', (err) => {
+    logger.error({ err }, 'Unhandled promise rejection');
+    captureError(err);
+  });
   process.on('uncaughtException', (err) => {
+    captureError(err);
     logger.fatal({ err }, 'Uncaught exception - shutting down');
     shutdown('uncaughtException');
   });

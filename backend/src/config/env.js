@@ -71,6 +71,11 @@ const schema = Joi.object({
   EMAIL_TIMEOUT_MS: Joi.number().default(15000),
 
   SMS_PROVIDER: Joi.string().valid('console', 'apitxt').default('console'),
+  SENTRY_DSN: Joi.string().uri().allow('').default(''),
+  SENTRY_ENVIRONMENT: Joi.string().allow('').default(''),
+  SENTRY_RELEASE: Joi.string().allow('').default(''),
+  SENTRY_TRACES_SAMPLE_RATE: Joi.number().min(0).max(1).default(0),
+  ATLAS_SEARCH_INDEX: Joi.string().allow('').default(''),
   APITXT_BASE_URL: Joi.string().uri().default('https://apitxt.com'),
   APITXT_AUTH_KEY: Joi.string().allow('').default(''),
   APITXT_API_KEY: Joi.string().allow('').default(''), // Bearer token; either key fills in for the other
@@ -223,6 +228,8 @@ const config = Object.freeze({
   cookie: { domain: env.COOKIE_DOMAIN || undefined, secure: env.COOKIE_SECURE || env.NODE_ENV === 'production' },
   otp: { ttl: env.OTP_TTL_SECONDS, maxAttempts: env.OTP_MAX_ATTEMPTS, devBypass: env.OTP_DEV_BYPASS && env.NODE_ENV !== 'production' },
   google: { clientIds: list(env.GOOGLE_CLIENT_IDS) },
+  sentry: { dsn: env.SENTRY_DSN, environment: env.SENTRY_ENVIRONMENT, release: env.SENTRY_RELEASE, tracesSampleRate: env.SENTRY_TRACES_SAMPLE_RATE },
+  search: { atlasIndex: env.ATLAS_SEARCH_INDEX },
   email: {
     provider: env.EMAIL_PROVIDER,
     fromEmail: env.MAIL_FROM_EMAIL,

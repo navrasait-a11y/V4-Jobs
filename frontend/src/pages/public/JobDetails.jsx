@@ -118,7 +118,8 @@ const JobDetails = () => {
   const settings = usePublicSettings();
   const [applyOpen, setApplyOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
-  const query = useQuery({ queryKey: ['job', id, user?._id], queryFn: () => jobApi.get(id) });
+  // Keep the page (and an open apply modal) mounted while the job reloads for a user who just signed in.
+  const query = useQuery({ queryKey: ['job', id, user?._id], queryFn: () => jobApi.get(id), placeholderData: (prev, prevQuery) => (prevQuery?.queryKey?.[1] === id ? prev : undefined) });
   const job = query.data?.job || query.data;
   const [saved, toggleSave] = useSaveJob(job);
   const similar = useQuery({ queryKey: ['job-similar', job?._id], queryFn: () => jobApi.similar(job._id), enabled: Boolean(job?._id) });

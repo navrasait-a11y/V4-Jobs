@@ -125,10 +125,10 @@ input:focus-visible, textarea:focus-visible, select:focus-visible, [contentedita
 /* Form controls share one look across every screen. */
 .field-control { background: #fff; color: var(--color-brand-dark); border: 1px solid #D5DBE4; border-radius: var(--radius-input); transition: border-color 0.12s ease, box-shadow 0.12s ease; }
 .field-control:hover:not(:disabled) { border-color: #AEB7C4; }
-.field-control:focus-visible, .field-control:focus, .field-control.is-open { outline: none; border-color: #98A2B3; }
+.field-control:focus-visible, .field-control:focus, .field-control:focus-within, .field-control.is-open { outline: none; border-color: var(--color-brand-blue); box-shadow: 0 0 0 3px var(--color-brand-blue-tint); }
 .field-control:disabled { background: var(--color-brand-tint); color: var(--color-brand-gray-muted); cursor: not-allowed; }
 .field-control.is-invalid { border-color: var(--color-brand-red); }
-.field-control.is-invalid:focus, .field-control.is-invalid:focus-visible { border-color: var(--color-brand-red); }
+.field-control.is-invalid:focus, .field-control.is-invalid:focus-visible, .field-control.is-invalid:focus-within { border-color: var(--color-brand-red); box-shadow: 0 0 0 3px var(--color-brand-red-tint); }
 
 input[type='checkbox'], input[type='radio'] { appearance: none; -webkit-appearance: none; width: 1.05rem; height: 1.05rem; flex-shrink: 0; margin: 0; background: #fff; border: 1.5px solid #B4BCC8; display: inline-grid; place-content: center; cursor: pointer; transition: background-color 0.1s ease, border-color 0.1s ease; }
 input[type='checkbox'] { border-radius: 0.25rem; }

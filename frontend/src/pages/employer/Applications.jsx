@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import AddToCalendar from '../../components/common/AddToCalendar';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { clsx } from 'clsx';
@@ -182,6 +183,18 @@ export const Applications = () => {
         <SimpleSelect ariaLabel="Screening" value={filters.screeningStatus} onChange={(v) => setFilters({ screeningStatus: v })} placeholder="Screening" options={opts(SCREENING_LABELS)} />
         <SimpleSelect ariaLabel="View" value={filters.view} onChange={(view) => setFilters({ view })} placeholder="All responses" options={[{ value: 'new', label: 'New' }, { value: 'viewed', label: 'Viewed' }, { value: 'pending', label: 'Action pending' }]} />
         <SimpleSelect ariaLabel="Time" value={filters.timespan} onChange={(timespan) => setFilters({ timespan })} placeholder="Any time" options={TIMESPAN_OPTIONS} />
+        <SimpleSelect
+          ariaLabel="Sort by"
+          value={filters.sort || '-createdAt'}
+          onChange={(sort) => setFilters({ sort: sort === '-createdAt' ? '' : sort })}
+          placeholder={null}
+          options={[
+            { value: '-createdAt', label: 'Newest first' },
+            { value: '-matchScore', label: 'Best match first' },
+            { value: 'createdAt', label: 'Oldest first' },
+            { value: 'snapshot.fullName', label: 'Name A-Z' },
+          ]}
+        />
       </div>
       {filters.job && <Funnel jobId={filters.job} />}
       {selected.length > 0 && (
@@ -288,7 +301,10 @@ export const ApplicationDetail = () => {
                 {interviews.map((iv) => (
                   <li key={iv._id} className="flex items-center justify-between gap-2">
                     <span>{formatDateTime(iv.scheduledAt)} · {titleCase(iv.mode)}</span>
-                    <StatusBadge status={iv.status} />
+                    <span className="flex items-center gap-3">
+                      <AddToCalendar interview={iv} jobTitle={job?.title ? `${job.title} - ${s.fullName || "candidate"}` : s.fullName} />
+                      <StatusBadge status={iv.status} />
+                    </span>
                   </li>
                 ))}
               </ul>

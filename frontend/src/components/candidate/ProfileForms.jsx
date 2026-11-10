@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import ResumeInsights from './ResumeInsights';
 import { Link } from 'react-router-dom';
 import Button from '../ui/Button';
 import { Alert, ConfirmDialog, Icon, Modal } from '../ui/feedback';
@@ -260,9 +261,9 @@ export const ResumeForm = ({ data }) => {
   const { api, invalidate } = useProfileApi();
   const resume = data.profile?.resume;
   const [parsed, setParsed] = useState(null);
-  const upload = useAction(api.uploadResume, { success: 'Resume uploaded', invalidate, onSuccess: (r) => setParsed(r.parsed) });
+  const upload = useAction(api.uploadResume, { success: 'Resume uploaded', invalidate, onSuccess: (r) => setParsed(r.parsed && Object.keys(r.parsed).length ? { ...r.parsed, at: Date.now() } : null) });
   const remove = useAction(api.deleteResume, { success: 'Resume removed', invalidate });
-  const addSkills = useAction((skills) => api.update({ keySkills: [...new Set([...(data.profile?.keySkills || []), ...skills])].slice(0, 15) }), { success: 'Skills added', invalidate, onSuccess: () => setParsed(null) });
+  const applyParsed = useAction((body) => api.update(body), { success: 'Profile updated from your resume', invalidate, onSuccess: () => setParsed(null) });
   const download = useAction(api.resumeLink, { onSuccess: (r) => window.open(r.url, '_blank', 'noopener') });
   const [confirm, setConfirm] = useState(false);
   return (
@@ -287,14 +288,7 @@ export const ResumeForm = ({ data }) => {
         </div>
       )}
       <FileDropzone accept=".pdf,.doc,.docx" maxSizeMb={5} busy={upload.isPending} onFile={upload.mutate} label={resume?.name ? 'Replace your resume' : 'Upload your resume'} hint="PDF, DOC or DOCX up to 5 MB" />
-      {parsed?.skills?.length > 0 && (
-        <Alert tone="info">
-          We found these skills in your resume: {parsed.skills.slice(0, 10).join(', ')}.{' '}
-          <button type="button" className="font-semibold underline" onClick={() => addSkills.mutate(parsed.skills)}>
-            Add to key skills
-          </button>
-        </Alert>
-      )}
+      {parsed && <ResumeInsights key={parsed.at} parsed={parsed} profile={data.profile} user={data.user} applying={applyParsed.isPending} onApply={applyParsed.mutate} onDismiss={() => setParsed(null)} />}
       <ConfirmDialog open={confirm} onClose={() => setConfirm(false)} title="Delete your resume?" message="Employers will not be able to download it until you upload a new one." danger confirmLabel="Delete" loading={remove.isPending} onConfirm={() => remove.mutate(undefined, { onSuccess: () => setConfirm(false) })} />
     </div>
   );

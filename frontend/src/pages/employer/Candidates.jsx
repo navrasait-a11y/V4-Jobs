@@ -164,11 +164,12 @@ const FilterForm = ({ form, setForm, onSearch, onSave, consultancy }) => {
           starred={form.mandatoryKeywords}
           onStarredChange={set('mandatoryKeywords')}
           placeholder="Job titles, skills, roles, companies, name, mobile, email"
+          suggest="candidates"
           hint="Up to 20. Tap the star to make a keyword mandatory"
         />
         <CheckboxField label="Mark all keywords as mandatory" checked={form.keywordMode === 'all'} onChange={(e) => set('keywordMode')(e.target.checked ? 'all' : 'any')} />
-        <TagInput label="Must have keywords" max={15} value={form.mustHaveKeywords} onChange={set('mustHaveKeywords')} placeholder="Add must have keywords" />
-        <TagInput label="Exclude keywords" max={15} value={form.excludeKeywords} onChange={set('excludeKeywords')} placeholder="Add excluded keywords" />
+        <TagInput label="Must have keywords" max={15} suggest="candidates" value={form.mustHaveKeywords} onChange={set('mustHaveKeywords')} placeholder="Add must have keywords" />
+        <TagInput label="Exclude keywords" max={15} suggest="candidates" value={form.excludeKeywords} onChange={set('excludeKeywords')} placeholder="Add excluded keywords" />
       </Group>
 
       <Group title="Experience & salary" defaultOpen count={filled(form, ['experienceLevels', 'expMin', 'expMax', 'salaryMin', 'salaryMax'])}>

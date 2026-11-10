@@ -1,3 +1,4 @@
+import { captureError } from './monitoring.js';
 import { Queue, Worker, UnrecoverableError } from 'bullmq';
 import config from '../../config/env.js';
 import logger from '../../config/logger.js';
@@ -98,7 +99,10 @@ export function startWorker() {
     },
     { connection: createRedisConnection(), concurrency, drainDelay: drainDelaySeconds, stalledInterval: stalledIntervalMs, maxStalledCount: 1 },
   );
-  worker.on('failed', (job, err) => logger.error({ err, job: job?.name, id: job?.id }, 'Background job failed'));
+  worker.on('failed', (job, err) => {
+    logger.error({ err, job: job?.name, id: job?.id }, 'Background job failed');
+    if (job && job.attemptsMade >= (job.opts?.attempts || 1)) captureError(err, { path: `job:${job.name}` });
+  });
   worker.on('error', (err) => logger.warn({ err: err.message }, 'Queue worker error'));
   logger.info({ concurrency }, 'Queue worker started');
   return worker;

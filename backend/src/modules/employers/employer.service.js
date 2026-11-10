@@ -1,6 +1,7 @@
 import dns from 'node:dns/promises';
 import config from '../../config/env.js';
 import ApiError from '../../shared/errors/ApiError.js';
+import { isValidGstin } from '../../shared/utils/gstin.js';
 import { ROLES, USER_STATUS, DEFAULT_MEMBER_PERMISSIONS, EMPLOYER_PERMISSIONS } from '../../shared/constants/index.js';
 import { putFile, deleteFile, signedUrl } from '../../shared/services/storage.service.js';
 import { randomToken, sha256, randomPassword } from '../../shared/utils/crypto.js';
@@ -62,7 +63,11 @@ export async function updateOrganization(req, body) {
       throw ApiError.conflict('This employer username is taken', 'USERNAME_TAKEN');
     org.username = body.username;
   }
-  if (body.gstNumber && body.gstNumber !== org.gstNumber) org.verification.gst = false;
+  if (body.gstNumber && body.gstNumber !== org.gstNumber) {
+    // A new GST number must pass the official check digit, so typos are caught before admin review.
+    if (!isValidGstin(body.gstNumber)) throw ApiError.validation([{ field: 'gstNumber', message: 'This GST number is not valid. Please check all 15 characters', location: 'body' }]);
+    org.verification.gst = false;
+  }
   if (body.website && body.website !== org.website) org.verification.domain = false;
   org.set(pick(body, ORG_EDITABLE));
   if (body.consultancyDeclaration) org.consultancyDeclaration = { ...body.consultancyDeclaration, acceptedAt: new Date() };

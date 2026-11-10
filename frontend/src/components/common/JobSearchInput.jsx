@@ -5,10 +5,20 @@ import { clsx } from 'clsx';
 import { Icon } from '../ui/feedback';
 import { Popover } from '../ui/pickers';
 import useDebounce from '../../hooks/useDebounce';
-import { lookupApi } from '../../services';
+import { lookupApi, searchApi } from '../../services';
+import SuggestGroups, { flattenGroups } from './SuggestGroups';
+import CurrentLocationButton from './CurrentLocationButton';
+import useAuthStore from '../../store/useAuthStore';
 import { clearRecent, readRecent, recentLabel, removeRecent } from '../../utils/recentSearches';
 
 const isPhone = () => window.matchMedia('(max-width: 639px)').matches;
+// Search terms are stored lower-case; show them like titles, keeping short forms in capitals (QA, HR, UI/UX).
+const ACRONYMS = new Set(['qa', 'hr', 'ui', 'ux', 'it', 'sde', 'sdet', 'ca', 'cs', 'bpo', 'kpo', 'aws', 'sql', 'seo', 'ai', 'ml', 'bd', 'bde', 'mr', 'rm', 'ba', 'pm', 'php', 'gcp', 'erp', 'sap', 'crm', 'hrbp', 'mis', 'dba', 'b2b', 'b2c', 'fmcg', 'bfsi']);
+const titleCase = (t) =>
+  String(t)
+    .split(/(\s+|\/)/)
+    .map((w) => (ACRONYMS.has(w.toLowerCase()) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1)))
+    .join('');
 const cityNames = (rows) => [...new Set(rows.map((l) => l.city).filter(Boolean))];
 
 /** What each search box suggests. Location shows the cities from recent searches. */
@@ -17,15 +27,20 @@ const SOURCES = {
     field: 'q',
     icon: 'search',
     sheetLabel: 'Search jobs',
-    popularTitle: 'Popular searches',
+    popularTitle: 'Trending searches',
     recent: readRecent,
     label: recentLabel,
     editable: true,
-    popular: async () => (await lookupApi.search('job_title', { limit: 8 })).map((o) => o.name),
-    find: async (q) => {
-      const [titles, skills] = await Promise.all([lookupApi.search('job_title', { q, limit: 5 }), lookupApi.search('key_skill', { q, limit: 5 })]);
-      return [...new Set([...titles, ...skills].map((o) => o.name))];
+    // What people searched most in the last 7 days (and found jobs for); popular titles until there is data.
+    popular: async () => {
+      const trending = await searchApi.trending('jobs', 8).catch(() => []);
+      if (trending.length >= 4) return trending.map((t) => titleCase(t.term));
+      return (await lookupApi.search('job_title', { limit: 8 })).map((o) => o.name);
     },
+    forYou: (f) => [...(f?.titles || []), ...(f?.skills || [])].slice(0, 6),
+    // Grouped: job titles, skills, companies (with live job counts), plus "did you mean" for typos.
+    find: (q) => searchApi.suggest(q, 'jobs', 6),
+    pickValue: (item) => item.label,
   },
   location: {
     field: 'location',
@@ -36,17 +51,21 @@ const SOURCES = {
     label: (r) => r.location,
     editable: false,
     popular: async () => cityNames(await lookupApi.locations({ popular: true, limit: 8 })),
-    find: async (q) => cityNames(await lookupApi.locations({ q, limit: 10 })),
+    forYou: (f) => (f?.cities || []).map((c) => c.city),
+    // Cities first, then localities; old names (Bangalore) and typos (jaipru) still find the place.
+    find: (q) => searchApi.suggest(q, 'locations', 6),
+    pickValue: (item) => item.city || item.label,
   },
 };
 
-const Suggestions = ({ source, term, recent, popular, matches, active, onRecent, onRemove, onClear, onPick }) => {
+const Suggestions = ({ source, term, recent, popular, forYou = [], matches, didYouMean, active, onRecent, onRemove, onClear, onPick }) => {
   const typing = term.trim().length >= 2;
   const needle = term.trim().toLowerCase();
   const shown = typing ? recent.filter((r) => source.label(r).toLowerCase().includes(needle)).slice(0, 2) : recent;
   const row = (i) => clsx('flex min-w-0 flex-1 items-center gap-3 rounded-md px-2 py-2 text-left text-sm text-brand-dark hover:bg-brand-tint', i === active && 'bg-brand-tint');
   return (
     <div className="p-2" onMouseDown={(e) => e.preventDefault()}>
+      {!typing && source.field === 'location' && <CurrentLocationButton onPlace={(place) => onPick(place.city)} className="mb-1" />}
       {shown.length > 0 && (
         <section>
           <div className="flex items-center justify-between px-2 py-1.5">
@@ -74,24 +93,34 @@ const Suggestions = ({ source, term, recent, popular, matches, active, onRecent,
           </ul>
         </section>
       )}
-      {typing && matches.length > 0 && (
+      {typing && (matches.length > 0 || didYouMean) && (
         <section className={shown.length ? 'mt-1 border-t border-brand-border pt-1' : ''}>
-          <h3 className="px-2 py-1.5 text-xs font-semibold text-brand-gray-muted">Suggestions</h3>
-          <ul>
-            {matches.map((m, i) => (
-              <li key={m}>
-                <button type="button" onClick={() => onPick(m)} className={clsx(row(i + shown.length), 'w-full')}>
-                  <Icon name={source.icon} size={18} className="shrink-0 text-brand-gray-muted" />
-                  <span className="truncate">{m}</span>
-                </button>
-              </li>
+          <SuggestGroups items={matches} term={term} active={active} offset={shown.length} onPick={onPick} didYouMean={didYouMean} onDidYouMean={onPick} />
+        </section>
+      )}
+      {typing && !matches.length && !didYouMean && !shown.length && (
+        <p className="px-2 py-3 text-sm text-brand-gray">No suggestions. Press Enter to search “{term.trim()}”.</p>
+      )}
+      {!typing && forYou.length > 0 && (
+        <section className={shown.length ? 'mt-1 border-t border-brand-border pt-1' : ''}>
+          <h3 className="flex items-center gap-1 px-2 py-1.5 text-xs font-semibold text-brand-gray-muted">
+            <Icon name="auto_awesome" size={14} className="text-brand-orange" /> For you
+          </h3>
+          <div className="flex flex-wrap gap-2 px-2 pb-2">
+            {forYou.map((p) => (
+              <button key={p} type="button" onClick={() => onPick(p)} className="rounded-full border border-brand-blue/30 bg-brand-blue-tint px-3 py-1 text-[13px] font-medium text-brand-blue hover:border-brand-blue">
+                {p}
+              </button>
             ))}
-          </ul>
+          </div>
         </section>
       )}
       {!typing && popular.length > 0 && (
         <section className={shown.length ? 'mt-1 border-t border-brand-border pt-1' : ''}>
-          <h3 className="px-2 py-1.5 text-xs font-semibold text-brand-gray-muted">{source.popularTitle}</h3>
+          <h3 className="flex items-center gap-1 px-2 py-1.5 text-xs font-semibold text-brand-gray-muted">
+            {source.field === 'q' && <Icon name="trending_up" size={14} className="text-brand-green" />}
+            {source.popularTitle}
+          </h3>
           <div className="flex flex-wrap gap-2 px-2 pb-2">
             {popular.map((p) => (
               <button key={p} type="button" onClick={() => onPick(p)} className="rounded-full border border-brand-border px-3 py-1 text-[13px] text-brand-dark hover:border-[#AEB7C4] hover:bg-brand-tint">
@@ -209,25 +238,30 @@ const JobSearchInput = ({
     enabled: open,
     staleTime: 30 * 60 * 1000,
   });
-  const { data: found = [] } = useQuery({
+  const signedIn = useAuthStore((st) => st.user?.role === 'candidate');
+  const { data: mine } = useQuery({ queryKey: ['search-for-you'], queryFn: () => searchApi.forYou(), enabled: open && signedIn, staleTime: 10 * 60 * 1000 });
+  const forYou = (source.forYou?.(mine) || []).filter((p) => !(multi && chips.some((c) => c.toLowerCase() === String(p).toLowerCase())));
+  const { data: found } = useQuery({
     queryKey: ['search-suggest', kind, term],
     queryFn: () => source.find(term),
     enabled: open && hasTerm,
     staleTime: 5 * 60 * 1000,
   });
 
-  const matches = found
-    .filter((m) => {
-      const lower = m.toLowerCase();
-      if (multi && chips.some((c) => c.toLowerCase() === lower)) return false;
-      return lower !== currentTerm.trim().toLowerCase();
-    })
-    .slice(0, 6);
+  const matches = flattenGroups(
+    found?.groups,
+    (m) => {
+      const lower = m.label.toLowerCase();
+      return (multi && chips.some((c) => c.toLowerCase() === lower)) || lower === currentTerm.trim().toLowerCase();
+    },
+    kind === 'location' ? 8 : 10,
+  );
+  const didYouMean = found?.didYouMean && found.didYouMean.toLowerCase() !== currentTerm.trim().toLowerCase() ? found.didYouMean : null;
 
   const shownRecent = hasTerm
     ? recent.filter((r) => source.label(r).toLowerCase().includes(term.trim().toLowerCase())).slice(0, 2)
     : recent;
-  const hasContent = shownRecent.length > 0 || (hasTerm ? matches.length > 0 : popular.length > 0);
+  const hasContent = shownRecent.length > 0 || (!hasTerm && forYou.length > 0) || (hasTerm ? matches.length > 0 || Boolean(didYouMean) || currentTerm.trim().length >= 2 : popular.length > 0);
 
   const show = () => {
     setRecent(source.recent());
@@ -242,7 +276,9 @@ const JobSearchInput = ({
     onSearch?.(r);
   };
 
-  const pickTerm = (text) => {
+  const pickTerm = (picked) => {
+    const text = typeof picked === 'string' ? picked : source.pickValue(picked);
+    if (kind === 'job' && typeof picked !== 'string') searchApi.track(text).catch(() => {});
     if (multi) {
       addChip(text);
       close();
@@ -362,6 +398,8 @@ const JobSearchInput = ({
       recent={recent}
       popular={popular}
       matches={matches}
+      forYou={forYou}
+      didYouMean={didYouMean}
       active={active}
       onRecent={pickRecent}
       onPick={pickTerm}

@@ -15,5 +15,6 @@ export default [
     },
   },
   { files: ['scripts/**', 'tests/**'], rules: { 'no-console': 'off' } },
+  { files: ['**/*.cjs'], languageOptions: { sourceType: 'commonjs', globals: { ...globals.node } } },
   { ignores: ['node_modules/', 'uploads/', 'tests/.uploads/', 'coverage/'] },
 ];

@@ -9,6 +9,7 @@ import { ROLES } from '../../shared/constants/index.js';
 import ApiError from '../../shared/errors/ApiError.js';
 import * as s from './candidate.service.js';
 import * as v from './candidate.validation.js';
+import { listProfileViews } from './profileViews.service.js';
 
 const itemSchema = (section) => (section === 'employments' ? v.employment : v.education);
 
@@ -48,6 +49,11 @@ const r = Router();
 r.use(authenticate, authorize(ROLES.CANDIDATE));
 
 r.get('/me/dashboard', async (req, res) => ok(res, await s.dashboard(req.user._id)));
+r.get(
+  '/me/profile-views',
+  validate({ query: Joi.object({ days: Joi.number().integer().valid(7, 30, 90, 180, 365), type: Joi.string().valid('all', 'company', 'consultancy'), page: Joi.number().integer().min(1).max(100), limit: Joi.number().integer().min(1).max(50) }) }),
+  async (req, res) => ok(res, await listProfileViews(req.user._id, req.query)),
+);
 r.get('/me/resume-builder', async (req, res) => ok(res, await s.getResumeBuilder(req.user._id)));
 r.put('/me/resume-builder', validate(v.resumeBuilder), async (req, res) => ok(res, await s.saveResumeBuilder(req.user._id, req.body), 'Resume saved'));
 r.post('/me/deactivate', validate({ body: Joi.object({ reason: Joi.string().max(500).allow('') }) }), async (req, res) => {

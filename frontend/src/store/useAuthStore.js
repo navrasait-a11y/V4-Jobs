@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import http, { hasSessionHint, refreshSession, setAccessToken, setSessionExpiredHandler } from '../services/api';
+import { setMonitoringUser } from '../utils/monitoring';
 
 const ADMIN_ROLES = ['admin', 'super_admin'];
 
@@ -56,5 +57,10 @@ export const isAdminRole = (role) => ADMIN_ROLES.includes(role);
 
 /** Home route for a role after login. */
 export const dashboardPath = (role) => (isAdminRole(role) ? '/admin/overview' : role === 'employer' ? '/employer/dashboard' : '/candidate/dashboard');
+
+// Tag error reports with the signed-in user id and role (never e-mail or name).
+useAuthStore.subscribe((s, prev) => {
+  if (s.user?._id !== prev.user?._id) setMonitoringUser(s.user);
+});
 
 export default useAuthStore;

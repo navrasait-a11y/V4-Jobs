@@ -1,10 +1,15 @@
 import React from 'react';
+import { captureError } from '../../utils/monitoring';
 
 class ErrorBoundary extends React.Component {
   state = { failed: false };
 
   static getDerivedStateFromError() {
     return { failed: true };
+  }
+
+  componentDidCatch(error, info) {
+    captureError(error, { componentStack: info?.componentStack?.slice(0, 2000), path: window.location.pathname });
   }
 
   render() {

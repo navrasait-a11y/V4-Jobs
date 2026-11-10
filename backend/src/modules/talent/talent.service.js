@@ -1,5 +1,6 @@
 import ApiError from '../../shared/errors/ApiError.js';
 import { hasEmployerPermission } from '../../shared/middleware/auth.js';
+import { recordSearch } from '../search/searchStats.service.js';
 import { maskEmail, maskMobile } from '../../shared/utils/helpers.js';
 import { signedUrl } from '../../shared/services/storage.service.js';
 import config from '../../config/env.js';
@@ -17,6 +18,7 @@ import { getWeights, scoreMatch } from '../matching/matching.service.js';
 import { buildTalentQuery, talentSort } from './talent.query.js';
 import { dateRangeFilter } from '../../shared/utils/timespan.js';
 import { citiesWithin } from '../masterdata/masterdata.service.js';
+import { recordProfileView } from '../candidates/profileViews.service.js';
 
 const MAX_RESULTS = 5000;
 /** Sorts applied after the users $lookup (they can use `u.*`). "Email optimized" = verified, reachable e-mails first. */
@@ -202,6 +204,7 @@ export async function search(member, filters, { page, limit }) {
     summary: (filters.keywords || []).join(', '),
     resultCount: total,
   }).catch(() => {});
+  if (page === 1) recordSearch({ terms: [...(filters.keywords || []), filters.q].filter((t) => typeof t === 'string'), scope: 'candidates', total });
   return { items: cards, total, page, limit, capped: total >= MAX_RESULTS };
 }
 
@@ -251,22 +254,7 @@ export async function viewProfile(member, candidateId, { source = 'search' } = {
   ]);
   if (!profile) throw ApiError.notFound('Candidate profile not found');
 
-  const fresh = !(await ProfileAccess.exists({
-    organization: orgId,
-    candidate: candidateId,
-    type: 'view',
-    createdAt: { $gte: new Date(Date.now() - 24 * 3600 * 1000) },
-  }));
-  if (fresh) {
-    await ProfileAccess.create({ organization: orgId, member: member._id, candidate: candidateId, type: 'view', source });
-    await Candidate.updateOne({ user: candidateId }, { $inc: { 'stats.profileViews': 1 } });
-    notify(candidateId, {
-      type: 'profile_viewed',
-      title: 'A recruiter viewed your profile',
-      body: (await Organization.findById(orgId).select('name').lean())?.name,
-      channels: ['in_app'],
-    });
-  }
+  await recordProfileView({ candidateId, member, source });
 
   const contactVisible = Boolean(unlocked) || Boolean(applied);
   const out = {

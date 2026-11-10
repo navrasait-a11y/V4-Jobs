@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import Joi from 'joi';
 import validate from '../../shared/middleware/validate.js';
+import User from '../users/user.model.js';
 import { authenticate, authorize, optionalAuth, requireEmployer } from '../../shared/middleware/auth.js';
 import { upload } from '../../shared/middleware/upload.js';
 import { uploadLimiter } from '../../shared/middleware/rateLimit.js';
@@ -105,6 +106,11 @@ const me = Router();
 me.use(authenticate, authorize(ROLES.EMPLOYER));
 
 me.get('/', requireEmployer(), async (req, res) => ok(res, await s.getOrganization(req.orgId)));
+/** Recruiter's own setting: in private mode candidates see "a recruiter" instead of name and company. */
+me.patch('/viewing-mode', requireEmployer(), validate({ body: Joi.object({ private: Joi.boolean().required() }) }), async (req, res) => {
+  await User.updateOne({ _id: req.user._id }, { $set: { 'employer.privateBrowsing': req.body.private } });
+  return ok(res, { private: req.body.private }, req.body.private ? 'Private mode on' : 'Private mode off');
+});
 me.patch('/', requireEmployer('company.manage'), validate({ body: orgBody }), async (req, res) =>
   ok(res, await s.updateOrganization(req, req.body), 'Profile updated'),
 );

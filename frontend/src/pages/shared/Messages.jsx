@@ -116,7 +116,7 @@ const Thread = ({ conversation, me, onBack }) => {
           }}
           aria-label="Message"
           placeholder="Type a message"
-          className="h-10 min-w-0 flex-1 rounded-lg border border-brand-border px-3 text-sm outline-none focus:border-[#98A2B3]"
+          className="h-10 min-w-0 flex-1 rounded-lg border border-brand-border px-3 text-sm outline-none focus:border-brand-blue focus:shadow-[0_0_0_3px_var(--color-brand-blue-tint)]"
         />
         <button type="submit" disabled={send.isPending || !text.trim()} aria-label="Send" className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-blue text-white disabled:opacity-50">
           <Icon name="send" size={18} />

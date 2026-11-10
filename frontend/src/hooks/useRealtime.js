@@ -84,6 +84,8 @@ export function notificationLink(n, role) {
       return employer ? '/employer/interviews' : '/candidate/interviews';
     case 'chat':
       return employer ? '/employer/messages' : '/candidate/messages';
+    case 'profile_views':
+      return '/candidate/profile-views';
     case 'job_alert':
       return '/candidate/job-alerts';
     case 'billing':

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { nearestCity } from './locationSearch.js';
 import Joi from 'joi';
 import validate from '../../shared/middleware/validate.js';
 import { authenticate, requireAdminPermission } from '../../shared/middleware/auth.js';
@@ -81,10 +82,17 @@ publicRouter.get(
       state: Joi.string().max(120),
       city: Joi.string().max(120),
       popular: Joi.boolean(),
+      withJobs: Joi.boolean(),
       limit: Joi.number().integer().min(1).max(100).default(20),
     }),
   }),
   async (req, res) => ok(res, await s.searchLocations(req.query)),
+);
+/** "Use my current location": nearest city to the browser's coordinates (POST so they never reach URL logs). */
+publicRouter.post(
+  '/locations/nearest',
+  validate({ body: Joi.object({ lat: Joi.number().min(-90).max(90).required(), lng: Joi.number().min(-180).max(180).required() }) }),
+  async (req, res) => ok(res, await nearestCity(req.body.lat, req.body.lng)),
 );
 publicRouter.get('/locations/states', async (req, res) => ok(res, (await s.listStates(req.query.country)).sort()));
 publicRouter.get('/locations/cities', async (req, res) => ok(res, (await s.listCities(req.query.state)).sort()));

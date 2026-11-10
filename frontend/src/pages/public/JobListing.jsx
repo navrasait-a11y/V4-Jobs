@@ -6,6 +6,7 @@ import AdSlot from '../../components/common/AdSlot';
 import JobCard from '../../components/common/JobCard';
 import JobSearchInput from '../../components/common/JobSearchInput';
 import Button from '../../components/ui/Button';
+import FilterCheckList from '../../components/ui/FilterCheckList';
 import { Pagination, SimpleSelect } from '../../components/ui/data';
 import { CardSkeleton, Drawer, EmptyState, ErrorState, Icon, Modal } from '../../components/ui/feedback';
 import { SuggestField, TextField } from '../../components/ui/form';
@@ -68,6 +69,32 @@ const LABELS = {
   skills: 'Skill',
 };
 
+/** "Showing results for ..." after an automatic spelling fix, or a "Did you mean" link. */
+const SpellingNotice = ({ meta, onUse, onExact }) => {
+  if (meta?.correctedQuery) {
+    return (
+      <div className="mb-3 rounded-lg border border-brand-blue/20 bg-brand-blue-tint px-3 py-2.5 text-sm text-brand-dark">
+        Showing results for <b>{meta.correctedQuery}</b>.{' '}
+        <button type="button" onClick={onExact} className="text-brand-blue hover:underline">
+          Search instead for “{meta.originalQuery}”
+        </button>
+      </div>
+    );
+  }
+  if (meta?.didYouMean) {
+    return (
+      <p className="mb-3 text-sm text-brand-gray">
+        Did you mean{' '}
+        <button type="button" onClick={() => onUse(meta)} className="font-semibold text-brand-blue hover:underline">
+          {meta.didYouMean}
+        </button>
+        ?
+      </p>
+    );
+  }
+  return null;
+};
+
 const split = (v) => (v ? String(v).split(SEP).filter(Boolean) : []);
 const optLabel = (options, v) => options.find((o) => o.value === String(v))?.label || v;
 
@@ -101,24 +128,7 @@ const Accordion = ({ icon, title, defaultOpen, count, children }) => {
   );
 };
 
-/** Checkbox list; facet counts when the API returns them. */
-const CheckList = ({ options, selected, onToggle, counts }) => (
-  <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
-    {options.map((o) => {
-      const value = typeof o === 'string' ? o : o.value;
-      const label = typeof o === 'string' ? o : o.label;
-      return (
-        <label key={value} className="flex cursor-pointer items-center justify-between gap-2 text-sm text-brand-gray">
-          <span className="flex min-w-0 items-center gap-2">
-            <input type="checkbox" checked={selected.includes(value)} onChange={() => onToggle(value)} />
-            <span className="truncate">{label}</span>
-          </span>
-          {counts?.[value] !== undefined && <span className="text-xs text-brand-gray-muted">{formatNumber(counts[value])}</span>}
-        </label>
-      );
-    })}
-  </div>
-);
+const CheckList = (props) => <FilterCheckList {...props} />;
 
 const Filters = ({ filters, setFilters, facets, lookups }) => {
   const get = (key) => split(filters[key]);
@@ -289,7 +299,7 @@ const SaveSearchButton = ({ filters, defaultName }) => {
 const AppliedFilters = ({ filters, setFilters, onReset }) => {
   const items = [];
   for (const [k, v] of Object.entries(filters)) {
-    if (['page', 'sort', 'limit', 'allMandatory', 'mandatory'].includes(k) || v === '') continue;
+    if (['page', 'sort', 'limit', 'allMandatory', 'mandatory', 'exact'].includes(k) || v === '') continue;
     if (LIST_KEYS.includes(k)) {
       for (const x of split(v)) items.push({ k, v: x, label: k === 'postedBy' ? optLabel(EMPLOYER_TYPE_OPTIONS, x) : x });
     } else {
@@ -384,6 +394,7 @@ const JobListing = () => {
     if (kw) patch.keywords = addTo('keywords', kw);
     if (loc) patch.location = addTo('location', loc);
     if (filters.q && kw) patch.q = '';
+    if (kw && filters.exact) patch.exact = '';
     if (Object.keys(patch).length) setFilters(patch);
     setQ('');
     setLocation('');
@@ -400,7 +411,7 @@ const JobListing = () => {
   const { page: _page, sort: _sort, limit: _limit, ...facetParams } = params;
   const facets = useQuery({ queryKey: ['job-facets', facetParams], queryFn: () => jobApi.facets(facetParams), placeholderData: keepPreviousData });
   const total = jobs.data?.meta?.total ?? 0;
-  const active = Object.keys(filters).filter((k) => !['page', 'sort', 'limit'].includes(k) && filters[k] !== '').length;
+  const active = Object.keys(filters).filter((k) => !['page', 'sort', 'limit', 'exact'].includes(k) && filters[k] !== '').length;
 
   return (
     <div className="bg-brand-tint">
@@ -451,6 +462,11 @@ const JobListing = () => {
               <SimpleSelect ariaLabel="Sort by" value={filters.sort || 'relevance'} onChange={(v) => setFilters({ sort: v })} options={JOB_SORT_OPTIONS} />
             </div>
           </div>
+          <SpellingNotice
+            meta={jobs.data?.meta}
+            onUse={(m) => setFilters({ keywords: (m.correctedKeywords || []).join(SEP), q: m.correctedQ || '', exact: '', page: '1' })}
+            onExact={() => setFilters({ exact: 'true', page: '1' })}
+          />
           <AppliedFilters filters={filters} setFilters={setFilters} onReset={reset} />
           <AdSlot placement="jobs_list" className="mb-4" />
           {jobs.isPending && <CardSkeleton count={5} />}

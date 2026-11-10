@@ -2,7 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import CompanyCard from '../../components/common/CompanyCard';
 import Button from '../../components/ui/Button';
-import { Pagination, SearchInput, SimpleSelect } from '../../components/ui/data';
+import CompanySearchBox from '../../components/common/CompanySearchBox';
+import FilterCheckList from '../../components/ui/FilterCheckList';
+import { Pagination, SimpleSelect } from '../../components/ui/data';
 import { CardSkeleton, Drawer, EmptyState, ErrorState, Icon } from '../../components/ui/feedback';
 import { SuggestField, TagInput } from '../../components/ui/form';
 import { useLookups, useUrlFilters } from '../../hooks/useData';
@@ -27,21 +29,12 @@ const Group = ({ title, count, defaultOpen, children }) => {
         </span>
         <Icon name={open ? 'expand_less' : 'expand_more'} size={18} className="text-brand-gray-muted" />
       </button>
-      {open && <div className="mt-2.5 max-h-60 space-y-2 overflow-y-auto">{children}</div>}
+      {open && <div className="mt-2.5 space-y-2">{children}</div>}
     </div>
   );
 };
 
-const Checks = ({ options, selected, onToggle }) =>
-  options.map((o) => {
-    const value = typeof o === 'string' ? o : o.value;
-    return (
-      <label key={value} className="flex cursor-pointer items-center gap-2 text-sm text-brand-gray">
-        <input type="checkbox" checked={selected.includes(value)} onChange={() => onToggle(value)} />
-        <span className="truncate">{typeof o === 'string' ? o : o.label}</span>
-      </label>
-    );
-  });
+const Checks = (props) => <FilterCheckList {...props} />;
 
 /** "Side Filters- Companies Search" (Other Forms Excel). */
 const Filters = ({ filters, setFilters, lookups, consultancy }) => {
@@ -123,7 +116,7 @@ const Companies = ({ type = 'company' }) => {
           <h1 className="text-2xl font-bold text-brand-dark sm:text-3xl">{consultancy ? 'Find Recruiters' : 'Explore Companies'}</h1>
           <p className="mt-1 text-sm text-brand-gray">{consultancy ? 'Consultancies hiring for their clients' : 'See who is hiring and follow the employers you like'}</p>
           <div className="mt-4 flex gap-2">
-            <SearchInput className="flex-1" value={q} onChange={setQ} placeholder={`Search ${consultancy ? 'recruiters' : 'companies'}`} />
+            <CompanySearchBox value={q} onChange={setQ} type={consultancy ? 'consultancy' : 'company'} placeholder={`Search ${consultancy ? 'recruiters' : 'companies'} by name`} />
             <Button variant="outline" size="sm" className="h-10 lg:hidden" onClick={() => setDrawer(true)} leftIcon={<Icon name="tune" size={16} />}>
               Filters{active ? ` (${active})` : ''}
             </Button>

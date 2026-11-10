@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import Joi from 'joi';
+import { gstinSchema } from '../../shared/utils/gstin.js';
 import validate from '../../shared/middleware/validate.js';
 import { authenticate, optionalAuth, requireAdminPermission } from '../../shared/middleware/auth.js';
 import { ok, created, paginated } from '../../shared/http/response.js';
@@ -15,11 +16,7 @@ import { Plan, Coupon, Order, Subscription, WalletTransaction } from './billing.
 
 const billing = Joi.object({
   name: Joi.string().trim().max(200),
-  gstin: Joi.string()
-    .trim()
-    .uppercase()
-    .pattern(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/)
-    .message('Invalid GSTIN'),
+  gstin: gstinSchema('Invalid GSTIN. Please check all 15 characters'),
   address: Joi.string().trim().max(500),
   city: Joi.string().trim().max(100),
   state: Joi.string().trim().max(100),
@@ -78,7 +75,7 @@ const planBody = Joi.object({
     .required(),
   name: Joi.string().trim().max(120).required(),
   audience: Joi.string().valid('employer', 'candidate').required(),
-  tier: Joi.string().valid('free', 'starter', 'professional', 'enterprise', 'booster', 'custom').default('starter'),
+  tier: Joi.string().valid('free', 'starter', 'professional', 'enterprise', 'booster', 'addon', 'custom').default('starter'),
   description: Joi.string().max(2000).allow(''),
   highlights: Joi.array().items(Joi.string().max(200)).max(20),
   price: Joi.number().min(0).required(),
@@ -103,6 +100,7 @@ const planBody = Joi.object({
     profileBoost: Joi.boolean(),
     featuredProfile: Joi.boolean(),
     priorityApplication: Joi.boolean(),
+    profileViewers: Joi.boolean(),
   }),
   maxMembers: Joi.number().integer().min(1).max(500),
   isActive: Joi.boolean().default(true),

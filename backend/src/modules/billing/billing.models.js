@@ -12,7 +12,7 @@ const planSchema = new Schema(
     code: { type: String, required: true, unique: true, trim: true, lowercase: true },
     name: { type: String, required: true, trim: true },
     audience: { type: String, enum: ['employer', 'candidate'], required: true, index: true },
-    tier: { type: String, enum: ['free', 'starter', 'professional', 'enterprise', 'booster', 'custom'], default: 'starter' },
+    tier: { type: String, enum: ['free', 'starter', 'professional', 'enterprise', 'booster', 'addon', 'custom'], default: 'starter' }, // addon = credit pack on top of the current plan
     description: String,
     highlights: [String],
     price: { type: Number, required: true, min: 0 }, // INR, exclusive of GST
@@ -31,6 +31,7 @@ const planSchema = new Schema(
       profileBoost: { type: Boolean, default: false }, // candidate
       featuredProfile: { type: Boolean, default: false }, // candidate
       priorityApplication: { type: Boolean, default: false }, // candidate
+      profileViewers: { type: Boolean, default: false }, // candidate: see every recruiter who viewed the profile
     },
     maxMembers: Number,
     isActive: { type: Boolean, default: true },

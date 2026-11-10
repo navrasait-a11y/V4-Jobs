@@ -3,7 +3,9 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import UpsellNotice from '../../components/employer/UpsellNotice';
-import JobPostForm, { JOB_BLANK, jobFormErrors, jobToForm, toJobPayload } from '../../components/employer/JobPostForm';
+import JobPostForm, { JOB_BLANK, JOB_STEPS, jobFormErrors, jobToForm, toJobPayload } from '../../components/employer/JobPostForm';
+import JobReview from '../../components/employer/JobReview';
+import { StepNav, Stepper, useSteps } from '../../components/ui/stepper';
 import Button from '../../components/ui/Button';
 import { PageHeader, Section } from '../../components/ui/data';
 import { Alert, PageLoader } from '../../components/ui/feedback';
@@ -12,6 +14,7 @@ import useAuth from '../../hooks/useAuth';
 import { useAction, useDocumentTitle } from '../../hooks/useData';
 import { employerJobApi, orgApi } from '../../services';
 
+const STEPS = [...JOB_STEPS, { key: 'review', title: 'Review & publish', short: 'Publish', fields: ['applyExternalUrl', 'googleJobsEnabled', 'featured'] }];
 const READ_ONLY = ['status', 'slug', '_id', 'uid', 'organization', 'organizationType', 'postedBy', 'stats', 'orgSnapshot', 'createdAt', 'updatedAt', 'collaborators', 'callbackRequests'];
 
 /** "Other User Can View/Edit Job": team members who can manage this job. */
@@ -59,6 +62,7 @@ const PostJob = () => {
   const [savedAt, setSavedAt] = useState(null);
   const [status, setStatus] = useState('draft');
   const [prefillFrom, setPrefillFrom] = useState('');
+
   const pickPrefill = async (id) => {
     setPrefillFrom(id);
     if (!id) return setForm((f) => ({ ...JOB_BLANK, kind: f.kind }));
@@ -77,6 +81,9 @@ const PostJob = () => {
   const loaded = useRef(!routeId);
   const savedCollaborators = useRef([]);
 
+  const editable = !routeId || status === 'draft';
+  const { step, reached, goTo, next, validateAll, showErrors, errorSteps, last } = useSteps(STEPS, { validate: () => jobFormErrors(form, { requireAll: editable }), setErrors, watch: form });
+
   const existing = useQuery({ queryKey: ['employer-job', routeId], queryFn: () => employerJobApi.get(routeId), enabled: Boolean(routeId) });
   useEffect(() => {
     if (!existing.data) return;
@@ -88,7 +95,6 @@ const PostJob = () => {
     loaded.current = true;
   }, [existing.data]);
 
-  const editable = !routeId || status === 'draft';
   const saveDraft = async () => {
     const payload = toJobPayload(form);
     for (const k of READ_ONLY) delete payload[k];
@@ -126,6 +132,7 @@ const PostJob = () => {
 
   const onError = (e) => {
     setErrors(e.fieldErrors || {});
+    showErrors(e.fieldErrors);
     if (e.status !== 402) toast.error(e.message);
   };
   const publish = useAction(
@@ -156,51 +163,80 @@ const PostJob = () => {
   );
 
   if (routeId && existing.isPending) return <PageLoader />;
-  const fieldErrors = Object.entries(errors).filter(([k]) => !['title', 'description', 'locations'].includes(k));
+  const fieldErrors = Object.entries(errors).filter(([k]) => !JOB_STEPS.some((st) => st.fields.includes(k)));
+  const submitLabel = editable ? (form.kind === 'internship' ? 'Post internship' : 'Post job') : 'Save changes';
 
   return (
     <div className="mx-auto max-w-4xl">
-      <PageHeader title={routeId ? 'Edit job' : form.kind === 'internship' ? 'Post an internship' : 'Post a job'} subtitle={savedAt ? `Draft saved at ${savedAt.toLocaleTimeString()}` : 'Drafts save automatically, so you can resume any time'} />
+      <PageHeader
+        title={routeId ? 'Edit job' : form.kind === 'internship' ? 'Post an internship' : 'Post a job'}
+        subtitle={savedAt ? `Draft saved at ${savedAt.toLocaleTimeString()}` : 'Drafts save automatically, so you can resume any time'}
+      />
       <UpsellNotice error={publish.error} />
       {fieldErrors.length > 0 && (
         <Alert tone="error" className="mb-4">
           {fieldErrors.map(([k, m]) => `${k}: ${m}`).join('. ')}
         </Alert>
       )}
+      <Stepper steps={STEPS} current={step} reached={reached} onStep={goTo} errorSteps={errorSteps(errors)} free={Boolean(routeId)} className="mb-4" />
       <form
         className="space-y-4"
+        onKeyDown={(e) => e.key === 'Enter' && e.target.tagName === 'INPUT' && !last && e.preventDefault()}
         onSubmit={(e) => {
           e.preventDefault();
-          const local = jobFormErrors(form, { requireAll: editable });
-          setErrors(local);
-          if (Object.keys(local).length) return toast.error('Please fix the highlighted fields');
+          if (!last && editable) return next();
+          if (!validateAll()) return undefined;
           return editable ? publish.mutate() : update.mutate();
         }}
       >
-        {!routeId && !jobId && <PrefillPicker kind={form.kind} value={prefillFrom} onPick={pickPrefill} />}
-        <JobPostForm
-          form={form}
-          setForm={setForm}
-          errors={errors}
-          consultancy={consultancy}
-          collaborators={<CollaboratorPicker me={user?._id} value={extra.collaborators} onChange={(collaborators) => setExtra((x) => ({ ...x, collaborators }))} />}
-        />
-        <Section title="Application settings">
-          <div className="space-y-4">
-            <TextField label="External apply URL" value={extra.applyExternalUrl} onChange={(e) => setExtra((x) => ({ ...x, applyExternalUrl: e.target.value }))} placeholder="Leave empty to collect applications here" />
-            <CheckboxField label="List on Google Jobs" checked={extra.googleJobsEnabled} onChange={(e) => setExtra((x) => ({ ...x, googleJobsEnabled: e.target.checked }))} />
-            {editable && <CheckboxField label="Feature this job (uses 1 featured credit)" checked={featured} onChange={(e) => setFeatured(e.target.checked)} />}
-          </div>
-        </Section>
+        {step === 0 && !routeId && !jobId && <PrefillPicker kind={form.kind} value={prefillFrom} onPick={pickPrefill} />}
+        {!last && (
+          <JobPostForm
+            step={step}
+            form={form}
+            setForm={setForm}
+            errors={errors}
+            consultancy={consultancy}
+            collaborators={<CollaboratorPicker me={user?._id} value={extra.collaborators} onChange={(collaborators) => setExtra((x) => ({ ...x, collaborators }))} />}
+          />
+        )}
+        {last && (
+          <>
+            <JobReview form={form} onEdit={goTo} />
+            <Section title="Application settings">
+              <div className="space-y-4">
+                <TextField
+                  label="External apply URL"
+                  value={extra.applyExternalUrl}
+                  onChange={(e) => setExtra((x) => ({ ...x, applyExternalUrl: e.target.value }))}
+                  placeholder="Leave empty to collect applications here"
+                />
+                <CheckboxField label="List on Google Jobs" checked={extra.googleJobsEnabled} onChange={(e) => setExtra((x) => ({ ...x, googleJobsEnabled: e.target.checked }))} />
+                {editable && <CheckboxField label="Feature this job (uses 1 featured credit)" checked={featured} onChange={(e) => setFeatured(e.target.checked)} />}
+              </div>
+            </Section>
+          </>
+        )}
 
-        <div className="sticky bottom-0 flex flex-wrap justify-end gap-2 surface p-3">
-          <Button variant="outline" size="sm" onClick={() => navigate('/employer/jobs')}>
-            Back to jobs
-          </Button>
-          <Button type="submit" size="sm" variant="primary" loading={publish.isPending || update.isPending}>
-            {editable ? (form.kind === 'internship' ? 'Post an internship' : 'Post a job') : 'Save changes'}
-          </Button>
-        </div>
+        <StepNav
+          current={step}
+          total={STEPS.length}
+          onBack={() => goTo(step - 1)}
+          onNext={next}
+          submitLabel={submitLabel}
+          loading={publish.isPending || update.isPending}
+          extra={
+            !editable && !last ? (
+              <Button type="submit" size="sm" variant="outline" loading={update.isPending}>
+                Save changes
+              </Button>
+            ) : (
+              <Button variant="ghost" size="sm" className="hidden sm:inline-flex" onClick={() => navigate('/employer/jobs')}>
+                Cancel
+              </Button>
+            )
+          }
+        />
       </form>
     </div>
   );

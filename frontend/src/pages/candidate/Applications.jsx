@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import AddToCalendar from '../../components/common/AddToCalendar';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { clsx } from 'clsx';
@@ -119,8 +120,11 @@ export const ATSTracker = () => {
                 <Section title="Interviews">
                   <ul className="space-y-2 text-sm text-brand-gray">
                     {detail.data.interviews.map((iv) => (
-                      <li key={iv._id}>
-                        {formatDateTime(iv.scheduledAt)} · {iv.mode} <StatusBadge status={iv.status} />
+                      <li key={iv._id} className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <span>
+                          {formatDateTime(iv.scheduledAt)} · {iv.mode} <StatusBadge status={iv.status} />
+                        </span>
+                        <AddToCalendar interview={iv} jobTitle={detail.data?.job?.title} company={detail.data?.job?.orgSnapshot?.name} />
                       </li>
                     ))}
                   </ul>

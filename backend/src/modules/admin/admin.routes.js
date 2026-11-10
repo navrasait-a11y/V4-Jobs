@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import mongoose from 'mongoose';
+import { insights as searchInsights } from '../search/searchStats.service.js';
 import ApiError from '../../shared/errors/ApiError.js';
 import Joi from 'joi';
 import validate from '../../shared/middleware/validate.js';
@@ -105,6 +106,12 @@ const trackingBody = Joi.object({
 /* ============================================================ dashboard */
 
 r.get('/system/health', requireAdminPermission('dashboard.view'), async (_req, res) => ok(res, await systemHealth()));
+r.get(
+  '/search/insights',
+  requireAdminPermission('dashboard.view'),
+  validate({ query: Joi.object({ scope: Joi.string().valid('jobs', 'candidates').default('jobs'), days: Joi.number().integer().valid(7, 30, 90, 180).default(30) }) }),
+  async (req, res) => ok(res, await searchInsights(req.query)),
+);
 r.get('/dashboard', requireAdminPermission('dashboard.view'), validate({ query: Joi.object(timespan) }), async (req, res) =>
   ok(res, await analytics.adminDashboard(req.query)),
 );

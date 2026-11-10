@@ -252,6 +252,28 @@ export const locations = [
 
 export const plans = [
   {
+    code: 'employer_addon_resume_100',
+    name: 'Resume pack 100',
+    audience: 'employer',
+    tier: 'addon',
+    price: 999,
+    durationDays: 90,
+    sortOrder: 20,
+    credits: { resume_view: 100, resume_download: 100 },
+    highlights: ['100 contact unlocks', '100 resume downloads', 'Valid 90 days'],
+  },
+  {
+    code: 'employer_addon_boost_5',
+    name: 'Job boost pack 5',
+    audience: 'employer',
+    tier: 'addon',
+    price: 1499,
+    durationDays: 90,
+    sortOrder: 21,
+    credits: { featured_job: 5 },
+    highlights: ['Boost 5 live jobs', 'Top of search for 15 days each', 'Valid 90 days'],
+  },
+  {
     code: 'employer_free',
     name: 'Free',
     audience: 'employer',
@@ -307,8 +329,8 @@ export const plans = [
     price: 299,
     durationDays: 30,
     sortOrder: 1,
-    features: { profileBoost: true, featuredProfile: true, priorityApplication: true },
-    highlights: ['Appear on top in recruiter searches', 'Featured profile badge', 'Priority applications'],
+    features: { profileBoost: true, featuredProfile: true, priorityApplication: true, profileViewers: true },
+    highlights: ['Appear on top in recruiter searches', 'See every recruiter who viewed your profile', 'Featured profile badge', 'Priority applications'],
   },
 ];
 
