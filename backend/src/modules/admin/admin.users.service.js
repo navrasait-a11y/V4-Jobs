@@ -98,11 +98,14 @@ export async function employerStats(q) {
 
 /* ============================================================= candidates */
 
+/** "Direct registered" covers every self sign-up, so it includes Google sign-ups (as the stats do). */
+const sourceFilter = (source) => (source === 'direct' ? { $in: ['direct', 'google'] } : source);
+
 export function candidateFilter(q) {
   const f = { role: ROLES.CANDIDATE, ...dateRangeFilter(q) };
   f.status = q.status ? q.status : { $ne: USER_STATUS.TRASHED };
   if (q.status === 'blocked') f.status = { $in: ['blocked', 'suspended'] };
-  if (q.source) f.source = q.source;
+  if (q.source) f.source = sourceFilter(q.source);
   if (q.label) f.labels = q.label;
   if (q.situationTag) f.situationTag = q.situationTag;
   if (q.verified !== undefined) f.isVerified = q.verified;
@@ -415,7 +418,7 @@ export function employerFilter(q) {
   f.status = q.status ? q.status : { $ne: USER_STATUS.TRASHED };
   if (q.status === 'blocked') f.status = { $in: ['blocked', 'suspended'] };
   if (q.type) f.type = q.type;
-  if (q.source) f.source = q.source;
+  if (q.source) f.source = sourceFilter(q.source);
   if (q.label) f.labels = q.label;
   if (q.kycStatus) f.kycStatus = q.kycStatus;
   if (q.verified !== undefined) f.isVerified = q.verified;
@@ -826,7 +829,7 @@ export async function bulkMessage(admin, { userIds, audience, filters = {}, chan
         type: 'admin_alert',
         title: subject,
         body: message?.slice(0, 300),
-        channels: channels.filter((c) => ['in_app', 'push'].includes(c)).concat('in_app'),
+        channels: [...new Set(['in_app', ...channels.filter((c) => c === 'push')])],
       });
     }
   }

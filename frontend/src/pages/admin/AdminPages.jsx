@@ -2,22 +2,21 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { MODULES } from './modules';
 import ResourcePage from '../../components/admin/ResourcePage';
 import { MediaField } from '../../components/admin/AdminActions';
 import RichTextEditor from '../../components/admin/RichTextEditor';
 import AccountSecurity from '../../components/shared/AccountSecurity';
 import Button from '../../components/ui/Button';
-import { DataTable, PageHeader, Pagination, SearchInput, Section, SimpleSelect, Tabs } from '../../components/ui/data';
-import { ConfirmDialog, EmptyState, ErrorState, Icon, Modal, PageLoader } from '../../components/ui/feedback';
-import { CheckboxField, Field, ChoiceChips, SelectField, TextAreaField, TextField } from '../../components/ui/form';
+import { DataTable, PageHeader, Pagination, SearchInput, Section, SimpleSelect } from '../../components/ui/data';
+import { ConfirmDialog, EmptyState, Icon, Modal, PageLoader } from '../../components/ui/feedback';
+import { Field, ChoiceChips, SelectField, TextAreaField, TextField } from '../../components/ui/form';
 import useAuth from '../../hooks/useAuth';
 import useDebounce from '../../hooks/useDebounce';
 import { useAction, useDocumentTitle } from '../../hooks/useData';
 import { useSocketEvent } from '../../hooks/useRealtime';
 import { adminApi, lookupApi } from '../../services';
-import { TIMESPAN_OPTIONS, formatDate, formatDateTime, timeAgo, titleCase } from '../../utils/format';
+import { formatDate, formatDateTime, timeAgo, titleCase } from '../../utils/format';
 
 /** One config-driven screen per URL segment. */
 export const AdminModule = ({ name }) => <ResourcePage key={name} config={MODULES[name]} />;
@@ -32,66 +31,6 @@ export const MediaLibrary = () => {
         <MediaField label="Image" value={file} onChange={setFile} />
         {file?.url && <p className="mt-3 break-all text-sm text-brand-blue">{file.url}</p>}
       </Section>
-    </div>
-  );
-};
-
-export const AdminAnalytics = () => {
-  useDocumentTitle('Analytics');
-  const [timespan, setTimespan] = useState('30d');
-  const query = useQuery({ queryKey: ['admin', 'analytics', timespan], queryFn: () => adminApi.get('/analytics', { timespan }) });
-  if (query.isPending) return <PageLoader />;
-  if (query.isError) return <ErrorState error={query.error} onRetry={query.refetch} />;
-  const d = query.data;
-  const revenue = d.revenue?.daily || [];
-  const growth = Object.values((d.userGrowth || []).reduce((acc, g) => ({ ...acc, [g.date]: { date: g.date, count: (acc[g.date]?.count || 0) + g.count } }), {}));
-  const skills = d.topSkills || [];
-  return (
-    <div>
-      <PageHeader title="Analytics" actions={<SimpleSelect ariaLabel="Time range" value={timespan} onChange={setTimespan} options={TIMESPAN_OPTIONS} />} />
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Section title="Revenue">
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={revenue}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F0" vertical={false} />
-                <XAxis dataKey="_id" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} width={44} />
-                <Tooltip />
-                <Area dataKey="count" name="Revenue" stroke="#18A86B" fill="#E8F8F0" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </Section>
-        <Section title="New users">
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={growth}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F0" vertical={false} />
-                <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 11 }} width={32} />
-                <Tooltip />
-                <Area dataKey="count" name="Users" stroke="#0151A0" fill="#EDF4FC" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </Section>
-        {skills.length > 0 && (
-          <Section title="Top skills" className="lg:col-span-2">
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={skills.slice(0, 12)}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F0" vertical={false} />
-                  <XAxis dataKey="_id" tick={{ fontSize: 10 }} />
-                  <YAxis allowDecimals={false} tick={{ fontSize: 11 }} width={32} />
-                  <Tooltip />
-                  <Bar dataKey="count" name="Jobs" fill="#0151A0" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </Section>
-        )}
-      </div>
     </div>
   );
 };
@@ -356,6 +295,16 @@ export const SupportChat = () => {
   );
 };
 
+const CHANNELS = [
+  { value: 'email', label: 'E-mail' },
+  { value: 'sms', label: 'SMS' },
+  { value: 'whatsapp', label: 'WhatsApp' },
+  { value: 'arattai', label: 'Arattai' },
+  { value: 'in_app', label: 'In-app' },
+  { value: 'push', label: 'Push' },
+];
+const channelLabel = (value) => CHANNELS.find((c) => c.value === value)?.label || value;
+
 export const Communications = () => {
   useDocumentTitle('Bulk messages');
   const blank = { audience: 'candidates', channels: ['email'], subject: '', message: '', html: '' };
@@ -376,10 +325,10 @@ export const Communications = () => {
         <div className="space-y-4">
           <SelectField label="Audience" placeholder={null} options={['candidates', 'employers', 'companies', 'consultancies'].map((v) => ({ value: v, label: titleCase(v) }))} value={form.audience} onChange={set('audience')} />
           <Field label="Channels">
-            <ChoiceChips multiple options={['email', 'sms', 'whatsapp', 'in_app', 'push'].map((v) => ({ value: v, label: titleCase(v) }))} value={form.channels} onChange={set('channels')} />
+            <ChoiceChips multiple options={CHANNELS} value={form.channels} onChange={set('channels')} />
           </Field>
           <TextField label="Subject" required value={form.subject} onChange={set('subject')} />
-          <TextAreaField label="Short message" required rows={3} value={form.message} onChange={set('message')} hint="Used for SMS, WhatsApp, push and in-app. Keep it short and plain." maxLength={5000} />
+          <TextAreaField label="Short message" required rows={3} value={form.message} onChange={set('message')} hint="Used for SMS, WhatsApp, Arattai, push and in-app. Keep it short and plain." maxLength={5000} />
           {form.channels.includes('email') && (
             <RichTextEditor label="E-mail content (formatted)" value={form.html} onChange={set('html')} minHeight={260} hint="Optional. Leave empty to e-mail the short message." />
           )}
@@ -389,80 +338,8 @@ export const Communications = () => {
         </div>
       </Section>
       <Modal open={confirm} onClose={() => setConfirm(false)} title="Send to everyone in this audience?" size="sm" footer={<Button size="sm" variant="primary" loading={send.isPending} onClick={() => send.mutate()}>Send now</Button>}>
-        <p className="text-sm text-brand-gray">This sends real messages to {form.audience} on {form.channels.join(', ')} and cannot be undone.</p>
+        <p className="text-sm text-brand-gray">This sends real messages to up to 500 {form.audience} on {form.channels.map(channelLabel).join(', ')} and cannot be undone. Arattai needs its API details saved under Settings &gt; Integrations.</p>
       </Modal>
-    </div>
-  );
-};
-
-const SettingEditor = ({ item }) => {
-  const isBool = typeof item.value === 'boolean';
-  const isObject = item.value !== null && typeof item.value === 'object';
-  const [value, setValue] = useState(isObject ? JSON.stringify(item.value, null, 2) : item.value ?? '');
-  const save = useAction(
-    () => {
-      let v = value;
-      if (isObject) v = JSON.parse(value);
-      else if (typeof item.value === 'number') v = Number(value);
-      return adminApi.put(`/settings/${item.key}`, { value: v });
-    },
-    { success: 'Setting saved', invalidate: ['admin'] },
-  );
-  return (
-    <div className="border-b border-brand-border py-3 last:border-0">
-      {isBool ? (
-        <CheckboxField label={item.key} description={item.description} checked={Boolean(value)} onChange={(e) => setValue(e.target.checked)} />
-      ) : isObject ? (
-        <TextAreaField label={item.key} hint={item.description} rows={4} value={value} onChange={(e) => setValue(e.target.value)} />
-      ) : (
-        <TextField label={item.key} hint={item.description} value={value} onChange={(e) => setValue(e.target.value)} />
-      )}
-      <Button size="sm" variant="outline" className="mt-2" loading={save.isPending} onClick={() => save.mutate()}>
-        Save
-      </Button>
-    </div>
-  );
-};
-
-export const AdminSettings = () => {
-  useDocumentTitle('Settings');
-  const [group, setGroup] = useState('platform');
-  const [to, setTo] = useState('');
-  const [mobile, setMobile] = useState('');
-  const query = useQuery({ queryKey: ['admin', 'settings', group], queryFn: () => adminApi.get('/settings', { group }) });
-  const testEmail = useAction(() => adminApi.post('/settings/test-email', { to }), { success: 'Test e-mail sent' });
-  const testSms = useAction(() => adminApi.post('/settings/test-sms', { mobile, template: 'generic' }), { success: 'Test SMS sent' });
-  const rows = Array.isArray(query.data) ? query.data : query.data?.items || Object.entries(query.data || {}).map(([key, value]) => ({ key, value }));
-  return (
-    <div className="mx-auto max-w-3xl">
-      <PageHeader title="Settings" />
-      <Tabs className="mb-4" value={group} onChange={setGroup} tabs={['platform', 'payments', 'ads', 'ai', 'integrations'].map((g) => ({ value: g, label: titleCase(g) }))} />
-      <Section>
-        {query.isPending && <PageLoader className="h-40" />}
-        {query.isError && <ErrorState error={query.error} />}
-        {rows.map((item) => (
-          <SettingEditor key={item.key} item={item} />
-        ))}
-      </Section>
-      {group === 'integrations' && (
-        <Section title="Provider tests" className="mt-4">
-          <p className="mb-3 text-sm text-brand-gray">Each test sends one real message.</p>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="flex items-end gap-2">
-              <TextField className="flex-1" label="Test e-mail to" type="email" value={to} onChange={(e) => setTo(e.target.value)} />
-              <Button size="sm" variant="outline" className="h-11" disabled={!to} loading={testEmail.isPending} onClick={() => testEmail.mutate()}>
-                Send
-              </Button>
-            </div>
-            <div className="flex items-end gap-2">
-              <TextField className="flex-1" label="Test SMS to" value={mobile} onChange={(e) => setMobile(e.target.value)} />
-              <Button size="sm" variant="outline" className="h-11" disabled={!mobile} loading={testSms.isPending} onClick={() => testSms.mutate()}>
-                Send
-              </Button>
-            </div>
-          </div>
-        </Section>
-      )}
     </div>
   );
 };

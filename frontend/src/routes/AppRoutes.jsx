@@ -92,6 +92,7 @@ const EmployerInterviews = named(empApps, 'Interviews');
 const Candidates = lazy(empCandidates);
 const CandidateResumeDetail = named(empCandidates, 'CandidateResumeDetail');
 const SavedSearches = lazy(() => import('../pages/employer/SavedSearches'));
+const FolderPage = lazy(() => import('../pages/employer/Folders'));
 const EmployerEvents = lazy(() => import('../pages/employer/Events'));
 const Employees = lazy(() => import('../pages/employer/Employees'));
 const EmployerAnalytics = named(insights, 'Analytics');
@@ -103,19 +104,19 @@ const EmployerSettings = lazy(() => import('../pages/employer/Settings'));
 const adminPages = () => import('../pages/admin/AdminPages');
 const Impersonate = lazy(() => import('../pages/public/Impersonate'));
 const Overview = lazy(() => import('../pages/admin/AdminOverview'));
-const AdminAnalytics = named(adminPages, 'AdminAnalytics');
+const AdminAnalytics = lazy(() => import('../pages/admin/AdminAnalytics'));
 const AdminCandidateDetail = lazy(() => import('../pages/admin/AdminCandidate'));
 const AdminEmployerDetail = lazy(() => import('../pages/admin/AdminEmployer'));
 const KycQueue = named(adminPages, 'KycQueue');
 const Taxonomy = named(adminPages, 'Taxonomy');
 const SupportChat = named(adminPages, 'SupportChat');
 const Communications = named(adminPages, 'Communications');
-const AdminSettings = named(adminPages, 'AdminSettings');
+const AdminSettings = lazy(() => import('../pages/admin/AdminSettings'));
 const AdminProfile = named(adminPages, 'AdminProfile');
 const AdminModule = named(adminPages, 'AdminModule');
 const MediaLibrary = named(adminPages, 'MediaLibrary');
 
-const ADMIN_MODULES = ['candidates', 'employers', 'jobs', 'responses', 'job-alerts', 'moderation', 'comments', 'blocklist', 'plans', 'coupons', 'orders', 'subscriptions', 'sales-leads', 'cms', 'career-advice', 'faqs', 'ads', 'contacts', 'email-center', 'locations', 'users', 'roles', 'login-audit', 'message-logs', 'sms-logs', 'security'];
+const ADMIN_MODULES = ['candidates', 'employers', 'jobs', 'responses', 'job-alerts', 'moderation', 'comments', 'blocklist', 'plans', 'coupons', 'orders', 'wallet', 'subscriptions', 'sales-leads', 'cms', 'career-advice', 'faqs', 'ads', 'contacts', 'email-center', 'locations', 'users', 'roles', 'login-audit', 'message-logs', 'sms-logs', 'security'];
 
 const AppRoutes = () => (
   <Suspense fallback={<div className="route-progress" />}>
@@ -192,6 +193,8 @@ const AppRoutes = () => (
           <Route path="/employer/candidates" element={<Candidates />} />
           <Route path="/employer/candidates/:id" element={<CandidateResumeDetail />} />
           <Route path="/employer/saved-searches" element={<SavedSearches />} />
+          <Route path="/employer/folders/system/:key" element={<FolderPage />} />
+          <Route path="/employer/folders/:id" element={<FolderPage />} />
           <Route path="/employer/interviews" element={<EmployerInterviews />} />
           <Route path="/employer/events" element={<EmployerEvents />} />
           <Route path="/employer/messages" element={<Messages />} />

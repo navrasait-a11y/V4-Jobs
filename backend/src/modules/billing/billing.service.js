@@ -4,6 +4,7 @@ import config from '../../config/env.js';
 import logger from '../../config/logger.js';
 import ApiError from '../../shared/errors/ApiError.js';
 import { hmacSha256, safeEqual } from '../../shared/utils/crypto.js';
+import { gstStateCode } from '../../shared/utils/gstin.js';
 import { generateUid } from '../../shared/models/counter.model.js';
 import { ID_PREFIX, ROLES } from '../../shared/constants/index.js';
 import Organization from '../employers/organization.model.js';
@@ -94,6 +95,25 @@ async function resolveCoupon(code, { plan, userId, audience }) {
 }
 
 /**
+ * Place of supply for GST: what the buyer gave at checkout, else their GSTIN, else the state of
+ * their office (employers) or current location (candidates). Unknown -> undefined, which is taxed
+ * as the seller's own state.
+ */
+async function buyerStateCode(owner, billing = {}) {
+  if (billing.stateCode) return billing.stateCode;
+  if (billing.gstin) return billing.gstin.slice(0, 2);
+  if (billing.state && gstStateCode(billing.state)) return gstStateCode(billing.state);
+  if (owner.organization) {
+    const org = await Organization.findById(owner.organization).select('gstNumber offices.state offices.isPrimary').lean();
+    if (org?.gstNumber) return org.gstNumber.slice(0, 2);
+    const office = org?.offices?.find((o) => o.isPrimary) || org?.offices?.[0];
+    return gstStateCode(office?.state);
+  }
+  const profile = await Candidate.findOne({ user: owner.user }).select('currentLocation.state').lean();
+  return gstStateCode(profile?.currentLocation?.state);
+}
+
+/**
  * Price breakdown with GST. Intra-state (same state code as the seller) -> CGST + SGST,
  * inter-state -> IGST.
  */
@@ -119,7 +139,8 @@ export async function quote(user, { planId, couponCode, referralCode, useWallet 
   const taxable = round2(plan.price - discount);
   const gstPercent = plan.gstPercent ?? (await getSetting('payments.gstPercent', 18));
   const gstTotal = round2((taxable * gstPercent) / 100);
-  const intra = !billing.stateCode || billing.stateCode === config.billing.stateCode;
+  const stateCode = await buyerStateCode(owner, billing);
+  const intra = !stateCode || stateCode === config.billing.stateCode;
   const gst = intra
     ? { percent: gstPercent, cgst: round2(gstTotal / 2), sgst: round2(gstTotal / 2), igst: 0, total: gstTotal }
     : { percent: gstPercent, cgst: 0, sgst: 0, igst: gstTotal, total: gstTotal };
@@ -130,7 +151,7 @@ export async function quote(user, { planId, couponCode, referralCode, useWallet 
     const wallet = await getWallet(owner.ownerKey, { organization: owner.organization, user: owner.user });
     walletUsed = round2(Math.min(wallet.balance, gross));
   }
-  return { plan, coupon, referrer, amount: plan.price, discount, taxable, gst, gross, walletUsed, total: round2(gross - walletUsed) };
+  return { plan, coupon, referrer, amount: plan.price, discount, taxable, gst, gross, walletUsed, total: round2(gross - walletUsed), stateCode };
 }
 
 /* ---------------------------------------------------------------- checkout */
@@ -154,7 +175,7 @@ export async function createOrder(user, body) {
     walletUsed: q.walletUsed,
     total: q.total,
     gateway: q.total === 0 ? (q.walletUsed ? 'wallet' : 'free') : 'razorpay',
-    billing: body.billing,
+    billing: { ...body.billing, ...(q.stateCode ? { stateCode: q.stateCode } : {}) },
     isRenewal: Boolean(body.isRenewal),
   });
 
@@ -163,15 +184,42 @@ export async function createOrder(user, body) {
     return { order: await Order.findById(order._id).lean(), paymentRequired: false };
   }
 
-  const rzpOrder = await rzp().orders.create({
-    amount: Math.round(q.total * 100),
-    currency: 'INR',
-    receipt: orderNumber,
-    notes: { orderId: String(order._id), plan: q.plan.code },
-  });
+  return openGatewayOrder(user, order, { description: q.plan.name, notes: { plan: q.plan.code } });
+}
+
+/**
+ * Payment methods the admin left switched on (Settings > Payments), in Razorpay Checkout's
+ * `method` shape. Paytm / PhonePe wallets are inside Razorpay's wallet method, so the wallet switch covers them.
+ */
+async function enabledMethods() {
+  const m = await getSetting('payments.methods', {});
+  if (m.razorpay === false) throw ApiError.badRequest('Online payments are switched off right now. Please try again later', undefined, 'PAYMENTS_DISABLED');
+  const methods = { upi: m.upi !== false, card: m.card !== false, netbanking: m.netbanking !== false, wallet: m.wallet !== false };
+  if (!Object.values(methods).some(Boolean)) throw ApiError.badRequest('No payment method is available right now', undefined, 'PAYMENTS_DISABLED');
+  return methods;
+}
+
+/** Creates the Razorpay order for a saved Order and returns what Razorpay Checkout needs. */
+async function openGatewayOrder(user, order, { description, notes = {} }) {
+  let methods;
+  let rzpOrder;
+  try {
+    methods = await enabledMethods();
+    rzpOrder = await rzp().orders.create({
+      amount: Math.round(order.total * 100),
+      currency: 'INR',
+      receipt: order.orderNumber,
+      notes: { orderId: String(order._id), ...notes },
+    });
+  } catch (err) {
+    // Nothing can be paid against this order, so it must not stay behind as "created".
+    await Order.updateOne({ _id: order._id }, { $set: { status: 'cancelled', failureReason: 'gateway_unavailable' } });
+    if (err instanceof ApiError) throw err;
+    logger.error({ err: err?.error || err, orderId: order._id }, 'Razorpay order creation failed');
+    throw new ApiError(502, 'Could not start the payment. Please try again in a moment', 'PAYMENT_GATEWAY_ERROR');
+  }
   order.gatewayOrderId = rzpOrder.id;
   await order.save();
-
   return {
     order: order.toObject(),
     paymentRequired: true,
@@ -181,10 +229,37 @@ export async function createOrder(user, body) {
       amount: rzpOrder.amount,
       currency: rzpOrder.currency,
       name: config.appName,
-      description: q.plan.name,
+      description,
       prefill: { name: user.fullName, email: user.email, contact: user.mobile },
+      methods,
     },
   };
+}
+
+/**
+ * Wallet top-up: the user pays the amount as it is and it lands in the wallet. No GST is charged
+ * here - tax is charged on the plan that the wallet balance later pays for.
+ */
+export async function createWalletTopup(user, { amount }) {
+  const rule = { enabled: true, min: 100, max: 100000, ...(await getSetting('payments.walletTopup', {})) };
+  if (!rule.enabled) throw ApiError.badRequest('Wallet top-up is not available right now', undefined, 'TOPUP_DISABLED');
+  const value = round2(amount);
+  if (value < rule.min || value > rule.max) throw ApiError.badRequest(`Enter an amount between Rs ${rule.min} and Rs ${rule.max}`, undefined, 'TOPUP_AMOUNT_INVALID');
+  const owner = ownerOf(user);
+  const order = await Order.create({
+    orderNumber: await generateUid(ID_PREFIX.order),
+    kind: 'wallet_topup',
+    buyer: user._id,
+    organization: owner.organization,
+    planName: 'Wallet top-up',
+    amount: value,
+    discount: 0,
+    taxable: 0,
+    gst: { percent: 0, cgst: 0, sgst: 0, igst: 0, total: 0 },
+    total: value,
+    gateway: 'razorpay',
+  });
+  return openGatewayOrder(user, order, { description: 'Wallet top-up', notes: { kind: 'wallet_topup' } });
 }
 
 /** Client-side confirmation after Razorpay Checkout success (webhook is the source of truth too). */
@@ -221,10 +296,30 @@ export async function handleWebhook(rawBody, signature) {
     order.failureReason = payment?.error_description?.slice(0, 300);
     await order.save();
   } else if (event.event === 'refund.processed') {
-    order.status = 'refunded';
-    await order.save();
+    await markRefunded(order._id);
   }
   return { processed: true };
+}
+
+/**
+ * Marks a paid order refunded (once). A refunded wallet top-up also takes the money back out of
+ * the wallet - as much of it as is still there.
+ */
+export async function markRefunded(orderId, { note, by } = {}) {
+  const order = await Order.findOneAndUpdate({ _id: orderId, status: 'paid' }, { $set: { status: 'refunded', ...(note ? { notes: note } : {}) } }, { new: true });
+  if (!order) return Order.findById(orderId);
+  if (order.kind === 'wallet_topup') {
+    const ownerKey = order.organization ? `org:${order.organization}` : `user:${order.buyer}`;
+    const wallet = await getWallet(ownerKey);
+    const take = round2(Math.min(wallet.balance, order.amount));
+    if (take > 0) {
+      await walletDebit(ownerKey, take, 'refund', { order: order._id, by, note: 'Top-up refunded' }).catch((err) =>
+        logger.error({ err, orderId }, 'Wallet reversal failed for refunded top-up'),
+      );
+    }
+    if (take < order.amount) logger.warn({ orderId, refunded: order.amount, recovered: take }, 'Refunded top-up was already partly spent');
+  }
+  return order;
 }
 
 /**
@@ -238,8 +333,24 @@ export async function fulfilOrder(orderId, { paymentId, method } = {}) {
     { new: true },
   );
   if (!order) return Order.findById(orderId); // already fulfilled
-  const plan = await Plan.findById(order.plan).lean();
   const ownerKey = order.organization ? `org:${order.organization}` : `user:${order.buyer}`;
+
+  if (order.kind === 'wallet_topup') {
+    await walletCredit(ownerKey, order.amount, 'topup', {
+      order: order._id,
+      note: 'Wallet top-up',
+      ids: order.organization ? { organization: order.organization } : { user: order.buyer },
+    });
+    notify(order.buyer, {
+      type: 'payment_success',
+      title: 'Money added to wallet',
+      body: `Rs ${order.amount} has been added to your wallet`,
+      data: { screen: 'billing', orderId: String(order._id) },
+      channels: ['in_app', 'push', 'email'],
+    });
+    return Order.findById(order._id).lean();
+  }
+  const plan = await Plan.findById(order.plan).lean();
 
   try {
     if (order.walletUsed > 0) await walletDebit(ownerKey, order.walletUsed, 'purchase', { order: order._id });
@@ -487,8 +598,18 @@ export async function getInvoice(user, invoiceId, { isAdmin = false } = {}) {
 
 /* ------------------------------------------------------- scheduled tasks */
 
+/** Checkout windows that were opened and never paid: closed after a day so they stop looking pending. */
+export async function cancelStaleOrders(olderThanHours = 24) {
+  const res = await Order.updateMany(
+    { status: 'created', gateway: 'razorpay', createdAt: { $lt: new Date(Date.now() - olderThanHours * 3600 * 1000) } },
+    { $set: { status: 'cancelled', failureReason: 'not_paid' } },
+  );
+  return res.modifiedCount;
+}
+
 export async function processSubscriptionLifecycle() {
   const now = new Date();
+  await cancelStaleOrders().catch((err) => logger.warn({ err }, 'Stale order cleanup failed'));
   // 1) expire
   const expired = await Subscription.find({ status: 'active', endsAt: { $lte: now } }).limit(1000);
   for (const sub of expired) {

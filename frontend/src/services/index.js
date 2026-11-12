@@ -39,6 +39,8 @@ export const lookupApi = {
   states: () => get('/locations/states'),
   cities: (state) => get('/locations/cities', { state }),
   settings: () => get('/settings/public'),
+  /** Skips the browser cache: used while waiting for maintenance mode to end. */
+  settingsFresh: () => get('/settings/public', { t: Date.now() }),
   enums: () => get('/enums'),
 };
 
@@ -69,6 +71,7 @@ export const authApi = {
   uploadAvatar: (file) => upload('/me/avatar', { avatar: file }),
   activity: (params) => list('/me/activity', params),
   loginHistory: (params) => list('/me/login-history', params),
+  downloadMyData: () => downloadFile('/me/data-export', { fallbackName: 'freejobwala-my-data.json' }),
 };
 
 export const candidateApi = {
@@ -206,7 +209,8 @@ export const billingApi = {
   subscriptions: () => get('/billing/subscriptions'),
   autoRenew: (id, autoRenew) => patch(`/billing/subscriptions/${id}/auto-renew`, { autoRenew }),
   orders: (params) => list('/billing/orders', params),
-  wallet: () => get('/billing/wallet'),
+  wallet: (params) => get('/billing/wallet', params),
+  walletTopup: (amount) => post('/billing/wallet/topup', { amount }),
 };
 
 /** Invoice preview and PDF. Admins read any invoice through their own route. */
@@ -304,6 +308,8 @@ export const talentApi = {
   folders: (params) => get('/employer/talent/folders', params),
   systemFolder: (key, params) => list(`/employer/talent/folders/system/${key}`, params),
   folder: (id, params) => list(`/employer/talent/folders/${id}`, params),
+  folderDetails: (id) => get(`/employer/talent/folders/${id}/details`),
+  transfer: (id, body) => post(`/employer/talent/folders/${id}/transfer`, body),
   addFolder: (body) => post('/employer/talent/folders', body),
   updateFolder: (id, body) => patch(`/employer/talent/folders/${id}`, body),
   removeFolder: (id) => del(`/employer/talent/folders/${id}`),

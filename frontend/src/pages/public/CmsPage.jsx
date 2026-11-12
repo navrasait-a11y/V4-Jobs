@@ -5,6 +5,29 @@ import { EmptyState, ErrorState, PageLoader } from '../../components/ui/feedback
 import { cmsApi } from '../../services';
 import { formatDate } from '../../utils/format';
 import useSeo from '../../hooks/useSeo';
+import Button from '../../components/ui/Button';
+import { setConsent, useConsent } from '../../utils/consent';
+
+const CHOICE = { all: 'All cookies are allowed on this device.', essential: 'Only essential cookies are allowed on this device.' };
+
+/** Lets a visitor change the cookie choice they made in the consent notice. */
+const CookieChoice = () => {
+  const consent = useConsent();
+  return (
+    <section className="mt-8 rounded-xl border border-brand-border bg-brand-tint p-4" aria-label="Your cookie choice">
+      <h2 className="text-sm font-bold text-brand-dark">Your cookie choice</h2>
+      <p className="mt-1 text-sm text-brand-gray">{CHOICE[consent] || 'You have not chosen yet.'}</p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button size="sm" variant={consent === 'all' ? 'primaryBlue' : 'outline'} onClick={() => setConsent('all')}>
+          Accept all
+        </Button>
+        <Button size="sm" variant={consent === 'essential' ? 'primaryBlue' : 'outline'} onClick={() => setConsent('essential')}>
+          Only essential
+        </Button>
+      </div>
+    </section>
+  );
+};
 
 /** About, privacy, terms and any other admin-managed page. */
 const CmsPage = ({ slug: fixedSlug }) => {
@@ -30,6 +53,7 @@ const CmsPage = ({ slug: fixedSlug }) => {
       {query.data.updatedAt && <p className="mt-1 text-xs text-brand-gray-muted">Last updated {formatDate(query.data.updatedAt)}</p>}
       {/* content is sanitised HTML from the API */}
       <div className="prose-content mt-6" dangerouslySetInnerHTML={{ __html: query.data.content }} />
+      {slug === 'cookie-policy' && <CookieChoice />}
     </article>
   );
 };

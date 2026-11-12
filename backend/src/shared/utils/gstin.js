@@ -9,6 +9,23 @@ export const GST_STATES = {
   37: 'Andhra Pradesh', 38: 'Ladakh', 97: 'Other Territory', 99: 'Centre Jurisdiction',
 };
 
+const STATE_ALIASES = { orissa: '21', pondicherry: '34', uttaranchal: '05', 'new delhi': '07', 'nct of delhi': '07', 'jammu kashmir': '01', 'daman and diu': '26', 'dadra and nagar haveli': '26' };
+const stateKey = (name) =>
+  String(name || '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+const CODE_BY_STATE = Object.fromEntries(
+  Object.entries(GST_STATES)
+    .filter(([code]) => code !== '37') // 28 is the current Andhra Pradesh code
+    .map(([code, name]) => [stateKey(name), String(code).padStart(2, '0')]),
+);
+
+/** GST state code ("08") for a state name as users type it ("Rajasthan", "Jammu & Kashmir"), or undefined. */
+export const gstStateCode = (name) => CODE_BY_STATE[stateKey(name)] || STATE_ALIASES[stateKey(name)];
+
 const CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 const SHAPE = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
 

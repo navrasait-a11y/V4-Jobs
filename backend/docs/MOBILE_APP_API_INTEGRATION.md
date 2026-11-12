@@ -63,9 +63,10 @@ For the **Android / iOS app team**. Per the PRD, the app covers the **Job Seeker
 
 1. `GET /settings/public` → use:
    * `platform.minAppVersion` (`{ android, ios }`): show a **force update** screen when the installed version is lower.
-   * `platform.maintenanceMode`: show a maintenance screen.
+   * `platform.maintenanceMode`: show a maintenance screen with `platform.maintenanceMessage` (when set). While it is on, every API call except `/auth/*`, `/settings/public` and `/enums` answers **503 `MAINTENANCE`**: show the same screen on that error too, and re-read `/settings/public` every minute to know when it ends.
    * `platform.profileDeleteEnabled`: show or hide "Delete account".
-   * `ads.enabled`, `ads.admobAppId`, `payments.methods`, `platform.supportEmail` / `platform.supportPhone`.
+   * `ads.enabled` (`false` = `/cms/ads` returns an empty list), `ads.admobAppId`, `platform.supportEmail` / `platform.supportPhone`.
+   * `payments.walletTopup` (`{ enabled, min, max }`): show or hide "Add money" and validate the amount.
 2. `GET /enums` → stages, statuses, report reasons, labels (cache for 1 h).
 3. If a refresh token is stored → `POST /auth/refresh`, then `GET /auth/me`. Otherwise show onboarding / login.
 4. Dropdowns: `GET /master-data/bulk?types=gender,experience_level,heard_from,...` (cache ~5 min, see §5).
@@ -443,12 +444,13 @@ socket.on('notification:new', (n) {});    // live in-app notification
 |---|---|---|
 | GET | `/billing/plans?audience=candidate` | Profile Booster packages |
 | POST | `/billing/quote` | `{ planId, couponCode?, referralCode?, useWallet? }` → `amount, discount, taxable, gst{cgst,sgst,igst,total}, walletUsed, total` |
-| POST | `/billing/checkout` | Same body (+ `billing{name,address,state,stateCode,pincode,email,phone}` optional) → `{ order, paymentRequired, razorpay{keyId, orderId, amount, currency, name, description, prefill} }` |
+| POST | `/billing/checkout` | Same body (+ `billing{name,address,state,stateCode,pincode,email,phone}` optional) → `{ order, paymentRequired, razorpay{keyId, orderId, amount, currency, name, description, prefill, methods} }`. `methods` = `{ upi, card, netbanking, wallet }` booleans set by the admin: pass it to Razorpay Checkout as `method` so switched-off methods are hidden |
 | POST | `/billing/verify` | `{ orderId, razorpayOrderId, razorpayPaymentId, razorpaySignature }` |
 | GET | `/billing/subscriptions` | Active package (`active.endsAt`) |
 | GET | `/billing/orders` | Transactions, with the invoice id |
 | GET | `/billing/invoices/:id` | JSON invoice. `?format=pdf` downloads the GST invoice as a PDF (use this for the Download button, with the auth header). `?format=html` gives the preview page (load it in a WebView with the auth header) |
-| GET | `/billing/wallet` | `{ balance, transactions }` (referral rewards) |
+| GET | `/billing/wallet?page=&limit=` | `{ balance, transactions{ items[{ type: credit/debit, amount, balanceAfter, reason, note, createdAt }], total, page, limit } }`. `reason`: `topup`, `purchase`, `refund`, `referral_reward`, `admin_adjustment` |
+| POST | `/billing/wallet/topup` | `{ amount }` (INR, within `payments.walletTopup` min and max) → same shape as checkout (`order`, `razorpay{...}`). Open Razorpay, then call `/billing/verify`. No GST is charged on a top-up. Errors: `TOPUP_DISABLED`, `TOPUP_AMOUNT_INVALID`, `PAYMENTS_DISABLED` |
 
 Flow with `razorpay_flutter`:
 
@@ -489,6 +491,7 @@ await api.post('/billing/verify', data: {'orderId': res['data']['order']['_id'],
 | Method | Path | Auth | Notes |
 |---|---|---|---|
 | GET | `/master-data/types` | – | `[{ key, label, userAddable }]`. Shows which lists accept "Add new option" |
+| GET | `/me/data-export` | ✔ | "Download my data": a JSON file (attachment) with the account, profile, applications, alerts, saved items, orders, wallet and login history |
 | GET | `/cms/share?url=<platform url>&text=` | – | Share links for any page (blog, employer, event) |
 | POST | `/moderation/comments` | ✔ | `{ targetType: organization, targetId, body, rating? 1–5 }`. Visible after admin approval |
 | GET | `/moderation/comments/mine` | ✔ | The candidate's own reviews |

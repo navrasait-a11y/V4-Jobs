@@ -20,6 +20,7 @@ import User from '../users/user.model.js';
 import { notify, sendEmail } from '../notifications/notification.service.js';
 import { buildShareLinks } from '../jobs/job.service.js';
 import { audit } from '../activity/activity.service.js';
+import { getSetting } from '../settings/settings.service.js';
 import { Page, Blog, Faq, Ad, EmailTemplate, ContactMessage, SalesLead } from './cms.models.js';
 
 const cleanHtml = (html) =>
@@ -116,6 +117,7 @@ publicRouter.get(
   optionalAuth,
   validate({ query: Joi.object({ placement: Joi.string().max(60).required(), platform: Joi.string().valid('web', 'android', 'ios').default('web') }) }),
   async (req, res) => {
+    if (!(await getSetting('ads.enabled', true))) return ok(res, []);
     const now = new Date();
     const audience = req.user ? ['all', req.user.role] : ['all', 'guest'];
     const ads = await Ad.find({

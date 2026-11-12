@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import AccountPanel, { CANDIDATE_LABELS } from '../../components/admin/AccountPanel';
 import { PlanAndWallet } from '../../components/admin/AdminActions';
 import UserActivity from '../../components/admin/UserActivity';
+import UsageReport from '../../components/admin/UsageReport';
 import { ProfileApiContext } from '../../components/candidate/ProfileForms';
 import Button from '../../components/ui/Button';
 import { Avatar, Badge, DataTable, Section, SimpleSelect, StatTile, StatusBadge, Tabs } from '../../components/ui/data';
@@ -239,6 +240,7 @@ const AdminCandidate = () => {
               <div><dt className="text-xs text-brand-gray-muted">Last active</dt><dd>{user.lastActiveAt ? formatDateTime(user.lastActiveAt) : '—'}</dd></div>
             </dl>
           </Section>
+          <UsageReport userId={id} candidate />
           <UserActivity userId={id} />
         </div>
       )}

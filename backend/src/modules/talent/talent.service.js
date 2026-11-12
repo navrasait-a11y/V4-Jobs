@@ -1,7 +1,7 @@
 import ApiError from '../../shared/errors/ApiError.js';
 import { hasEmployerPermission } from '../../shared/middleware/auth.js';
 import { recordSearch } from '../search/searchStats.service.js';
-import { maskEmail, maskMobile } from '../../shared/utils/helpers.js';
+import { maskEmail, maskMobile, escapeRegex } from '../../shared/utils/helpers.js';
 import { signedUrl } from '../../shared/services/storage.service.js';
 import config from '../../config/env.js';
 import Candidate from '../candidates/candidate.model.js';
@@ -363,12 +363,13 @@ export async function saveSearch(member, { name, filters, sharedWith, alertEnabl
     scope: member.employer ? 'resume' : 'job',
     name,
     filters,
-    sharedWith,
+    sharedWith: member.employer ? await teamOnly(member, sharedWith) : undefined,
     alertEnabled,
   });
 }
 
 export async function updateSavedSearch(member, id, data) {
+  if (data.sharedWith) data = { ...data, sharedWith: await teamOnly(member, data.sharedWith) };
   const doc = await SavedSearch.findOneAndUpdate({ _id: id, ...ownScope(member, 'saved_search.manage_all') }, { $set: data }, { new: true });
   if (!doc) throw ApiError.notFound('Saved search not found');
   return doc;
@@ -382,22 +383,75 @@ export async function deleteSavedSearch(member, id) {
 /* --------------------------------------------------------------- folders */
 
 const SYSTEM_FOLDERS = ['accessed', 'commented', 'contacted', 'shortlisted', 'rejected', 'hold'];
+const FOLDER_CAPACITY = 5000;
+const FOLDER_SORTS = { '-updatedAt': { updatedAt: -1 }, updatedAt: { updatedAt: 1 }, name: { nameLower: 1 }, '-name': { nameLower: -1 }, '-count': { count: -1, updatedAt: -1 }, '-createdAt': { createdAt: -1 } };
 
-export async function listFolders(member, { tab = 'mine', ...span }) {
+/** Folders saved before sharing modes existed have no `visibility`: a share list means "selected". */
+const visibilityOf = (folder) => folder.visibility || (folder.sharedWith?.length ? 'selected' : 'private');
+
+/**
+ * What a member may do with a folder:
+ *   owner - everything (the creator, or anyone with "manage all folders")
+ *   edit  - open it, add and remove candidates (shared with "can add and remove")
+ *   view  - open it only
+ *   null  - not visible at all
+ */
+function folderAccess(folder, member) {
+  if (String(folder.owner?._id || folder.owner) === String(member._id) || hasEmployerPermission(member, 'folder.manage_all')) return 'owner';
+  const visibility = visibilityOf(folder);
+  const shared = visibility === 'team' || (visibility === 'selected' && (folder.sharedWith || []).some((x) => String(x?._id || x) === String(member._id)));
+  if (!shared) return null;
+  return folder.sharedAccess === 'edit' ? 'edit' : 'view';
+}
+
+const sharedWithMe = (member) => ({
+  owner: { $ne: member._id },
+  $or: [{ visibility: 'team' }, { visibility: { $in: ['selected', null] }, sharedWith: member._id }],
+});
+
+/**
+ * Folder list. tab: mine | shared (other people's folders I can open) | all (everything I can open;
+ * the whole account for "manage all folders"). Supports name search, sorting, paging and the
+ * "Folders filters" date range (on last update).
+ */
+export async function listFolders(member, { tab = 'mine', q, sort = '-updatedAt', page = 1, limit = 200, ...span } = {}) {
   const orgId = member.employer.organization;
-  const filter = {
-    ...(tab === 'shared'
-      ? { organization: orgId, sharedWith: member._id }
-      : tab === 'all' && hasEmployerPermission(member, 'folder.manage_all')
-        ? { organization: orgId }
-        : { organization: orgId, owner: member._id }),
-    ...dateRangeFilter(span, 'updatedAt'),
-  };
-  const folders = await CandidateFolder.aggregate([
-    { $match: filter },
-    { $project: { name: 1, description: 1, owner: 1, sharedWith: 1, createdAt: 1, updatedAt: 1, count: { $size: '$candidates' } } },
-    { $sort: { updatedAt: -1 } },
+  const manageAll = hasEmployerPermission(member, 'folder.manage_all');
+  const scope =
+    tab === 'shared' ? sharedWithMe(member) : tab === 'all' ? (manageAll ? {} : { $or: [{ owner: member._id }, sharedWithMe(member)] }) : { owner: member._id };
+  const match = { organization: orgId, ...scope, ...dateRangeFilter(span, 'updatedAt') };
+  if (q?.trim()) match.name = new RegExp(escapeRegex(q.trim()), 'i');
+
+  const [rows, total, mine, shared, system] = await Promise.all([
+    CandidateFolder.aggregate([
+      { $match: match },
+      { $project: { name: 1, nameLower: { $toLower: '$name' }, description: 1, owner: 1, visibility: 1, sharedAccess: 1, sharedWith: 1, createdAt: 1, updatedAt: 1, count: { $size: '$candidates' } } },
+      { $sort: FOLDER_SORTS[sort] || FOLDER_SORTS['-updatedAt'] },
+      { $skip: (page - 1) * limit },
+      { $limit: limit },
+    ]),
+    CandidateFolder.countDocuments(match),
+    CandidateFolder.countDocuments({ organization: orgId, owner: member._id }),
+    CandidateFolder.countDocuments({ organization: orgId, ...sharedWithMe(member) }),
+    systemFolderCounts(orgId),
   ]);
+
+  const people = await User.find({ _id: { $in: [...new Set(rows.flatMap((f) => [f.owner, ...(f.sharedWith || [])]).map(String))] } })
+    .select('fullName avatar employer.designation')
+    .lean();
+  const byId = new Map(people.map((u) => [String(u._id), { _id: u._id, fullName: u.fullName, avatar: u.avatar?.url, designation: u.employer?.designation }]));
+  const folders = rows.map(({ nameLower: _n, ...f }) => ({
+    ...f,
+    visibility: visibilityOf(f),
+    sharedAccess: f.sharedAccess || 'view',
+    owner: byId.get(String(f.owner)) || { _id: f.owner },
+    sharedWith: (f.sharedWith || []).map((id) => byId.get(String(id))).filter(Boolean),
+    access: folderAccess(f, member),
+  }));
+  return { system, folders, total, page, limit, counts: { mine, shared }, capacity: FOLDER_CAPACITY };
+}
+
+async function systemFolderCounts(orgId) {
   const [accessed, commented, contacted, shortlisted, rejected, hold] = await Promise.all([
     ProfileAccess.distinct('candidate', { organization: orgId }).then((x) => x.length),
     CandidateTracking.countDocuments({ organization: orgId, 'comments.0': { $exists: true } }),
@@ -406,11 +460,11 @@ export async function listFolders(member, { tab = 'mine', ...span }) {
     CandidateTracking.countDocuments({ organization: orgId, screeningStatus: 'rejected' }),
     CandidateTracking.countDocuments({ organization: orgId, screeningStatus: 'on_hold' }),
   ]);
-  return { system: { accessed, commented, contacted, shortlisted, rejected, hold }, folders };
+  return { accessed, commented, contacted, shortlisted, rejected, hold };
 }
 
 export async function systemFolderCandidates(member, key, { page, limit, skip }) {
-  if (!SYSTEM_FOLDERS.includes(key)) throw ApiError.notFound('Folder not found');
+  if (!SYSTEM_FOLDERS.includes(key)) throw ApiError.badRequest('Unknown folder');
   const orgId = member.employer.organization;
   let ids;
   if (key === 'accessed') ids = await ProfileAccess.distinct('candidate', { organization: orgId });
@@ -426,7 +480,8 @@ export async function systemFolderCandidates(member, key, { page, limit, skip })
   return candidatesByIds(orgId, ids, { page, limit, skip });
 }
 
-async function candidatesByIds(orgId, ids, { page, limit, skip }) {
+/** Candidate cards for a list of ids, in the order given. `extra` adds per-candidate fields (who filed them, when). */
+async function candidatesByIds(orgId, ids, { page, limit, skip }, extra = new Map()) {
   const slice = ids.slice(skip, skip + limit);
   const [profiles, users, unlocks, tracks] = await Promise.all([
     Candidate.find({ user: { $in: slice } })
@@ -441,68 +496,210 @@ async function candidatesByIds(orgId, ids, { page, limit, skip }) {
     CandidateTracking.find({ organization: orgId, candidate: { $in: slice } }).lean(),
   ]);
   const uMap = new Map(users.map((u) => [String(u._id), u]));
+  const pMap = new Map(profiles.map((p) => [String(p.user), p]));
   const unlocked = new Set(unlocks.map((x) => String(x.candidate)));
   const tMap = new Map(tracks.map((t) => [String(t.candidate), t]));
-  const items = profiles
-    .filter((p) => uMap.has(String(p.user)))
-    .map((p) => toCard(p, uMap.get(String(p.user)), { unlocked: unlocked.has(String(p.user)), tracking: tMap.get(String(p.user)) }));
+  const items = slice
+    .map(String)
+    .filter((id) => uMap.has(id) && pMap.has(id))
+    .map((id) => ({ ...toCard(pMap.get(id), uMap.get(id), { unlocked: unlocked.has(id), tracking: tMap.get(id) }), ...(extra.get(id) || {}) }));
   return { items, total: ids.length, page, limit };
 }
 
-async function getFolder(member, id, { write = false } = {}) {
-  const orgId = member.employer.organization;
-  const folder = await CandidateFolder.findOne({ _id: id, organization: orgId });
+async function getFolder(member, id, need = 'view') {
+  const folder = await CandidateFolder.findOne({ _id: id, organization: member.employer.organization });
   if (!folder) throw ApiError.notFound('Folder not found');
-  const isOwner = String(folder.owner) === String(member._id);
-  const shared = folder.sharedWith.some((x) => String(x) === String(member._id));
-  const all = hasEmployerPermission(member, 'folder.manage_all');
-  if (!(isOwner || all || (!write && shared))) throw ApiError.forbidden('You cannot access this folder');
-  return folder;
-}
-
-export async function folderCandidates(member, id, pg) {
-  const folder = await getFolder(member, id);
-  return candidatesByIds(member.employer.organization, folder.candidates.map((c) => c.candidate).reverse(), pg);
-}
-
-export async function createFolder(member, { name, description }) {
-  return CandidateFolder.create({ organization: member.employer.organization, owner: member._id, name, description });
-}
-
-export async function updateFolder(member, id, { name, description, sharedWith }) {
-  const folder = await getFolder(member, id, { write: true });
-  if (name) folder.name = name;
-  if (description !== undefined) folder.description = description;
-  if (sharedWith) {
-    const valid = await User.find({ _id: { $in: sharedWith }, 'employer.organization': member.employer.organization })
-      .select('_id')
-      .lean();
-    folder.sharedWith = valid.map((v) => v._id);
+  const access = folderAccess(folder, member);
+  const rank = { view: 1, edit: 2, owner: 3 };
+  if (!access) throw ApiError.forbidden('You cannot open this folder', 'FOLDER_FORBIDDEN');
+  if (rank[access] < rank[need]) {
+    throw ApiError.forbidden(need === 'owner' ? 'Only the folder owner can change this folder' : 'This folder is shared with you as view only', 'FOLDER_READ_ONLY');
   }
-  await folder.save();
+  folder.$locals.access = access;
   return folder;
+}
+
+/** Only people of the same organization can be shared with - ids from anywhere else are dropped. */
+async function teamOnly(member, ids = []) {
+  if (!ids.length) return [];
+  const valid = await User.find({ _id: { $in: ids, $ne: member._id }, 'employer.organization': member.employer.organization, status: { $ne: 'trashed' } })
+    .select('_id')
+    .lean();
+  return valid.map((v) => v._id);
+}
+
+/** Validates the sharing fields of a create / update and returns what to store. */
+async function resolveSharing(member, { visibility, sharedWith, sharedAccess }, current = {}) {
+  const out = {};
+  const next = visibility ?? (sharedWith ? (sharedWith.length ? 'selected' : 'private') : undefined);
+  if (next === undefined && sharedAccess === undefined) return out;
+  const target = next ?? visibilityOf(current);
+  if (target !== 'private' && !hasEmployerPermission(member, 'saved_candidates.share')) {
+    throw ApiError.forbidden('Your team role does not allow sharing folders', 'PERMISSION_DENIED');
+  }
+  if (next !== undefined) out.visibility = next;
+  if (target === 'selected') {
+    if (sharedWith) out.sharedWith = await teamOnly(member, sharedWith);
+    const list = out.sharedWith ?? current.sharedWith ?? [];
+    if (!list.length) throw ApiError.badRequest('Choose at least one team member to share with', undefined, 'SHARE_NEEDS_MEMBERS');
+  } else if (next !== undefined) out.sharedWith = [];
+  if (sharedAccess) out.sharedAccess = sharedAccess;
+  return out;
+}
+
+async function assertNameFree(member, name, exceptId) {
+  const clash = await CandidateFolder.exists({
+    organization: member.employer.organization,
+    owner: member._id,
+    name: new RegExp(`^${escapeRegex(name)}$`, 'i'),
+    ...(exceptId ? { _id: { $ne: exceptId } } : {}),
+  });
+  if (clash) throw ApiError.conflict(`You already have a folder named "${name}"`, 'FOLDER_EXISTS');
+}
+
+function notifyShared(member, folder, userIds) {
+  for (const id of userIds) {
+    notify(id, {
+      type: 'folder_shared',
+      title: 'A folder was shared with you',
+      body: `${member.fullName} shared the folder "${folder.name}" with you`,
+      data: { screen: 'folders', folderId: String(folder._id) },
+      channels: ['in_app', 'push'],
+    });
+  }
+}
+
+async function describeFolder(folder, member) {
+  const people = await User.find({ _id: { $in: [folder.owner, ...folder.sharedWith] } })
+    .select('fullName avatar employer.designation')
+    .lean();
+  const byId = new Map(people.map((u) => [String(u._id), { _id: u._id, fullName: u.fullName, avatar: u.avatar?.url, designation: u.employer?.designation }]));
+  return {
+    _id: folder._id,
+    name: folder.name,
+    description: folder.description || '',
+    visibility: visibilityOf(folder),
+    sharedAccess: folder.sharedAccess || 'view',
+    owner: byId.get(String(folder.owner)) || { _id: folder.owner },
+    sharedWith: folder.sharedWith.map((id) => byId.get(String(id))).filter(Boolean),
+    count: folder.candidates.length,
+    capacity: FOLDER_CAPACITY,
+    access: folder.$locals.access || folderAccess(folder, member),
+    createdAt: folder.createdAt,
+    updatedAt: folder.updatedAt,
+  };
+}
+
+export async function folderDetails(member, id) {
+  return describeFolder(await getFolder(member, id), member);
+}
+
+/** Candidates of a folder, newest filed first, with who filed each one and when. `q` searches by name. */
+export async function folderCandidates(member, id, { page, limit, skip, q }) {
+  const folder = await getFolder(member, id);
+  const orgId = member.employer.organization;
+  const hidden = new Set((await hiddenCandidateIdsFor(orgId)).map(String));
+  let entries = [...folder.candidates].reverse().filter((c) => !hidden.has(String(c.candidate)));
+  if (q?.trim()) {
+    const hits = await User.find({ _id: { $in: entries.map((c) => c.candidate) }, fullName: new RegExp(escapeRegex(q.trim()), 'i') }).distinct('_id');
+    const keep = new Set(hits.map(String));
+    entries = entries.filter((c) => keep.has(String(c.candidate)));
+  }
+  const pageEntries = entries.slice(skip, skip + limit);
+  const adders = await User.find({ _id: { $in: pageEntries.map((c) => c.addedBy).filter(Boolean) } })
+    .select('fullName')
+    .lean();
+  const names = new Map(adders.map((u) => [String(u._id), u.fullName]));
+  const extra = new Map(pageEntries.map((c) => [String(c.candidate), { addedAt: c.addedAt, addedBy: names.get(String(c.addedBy)) || null }]));
+  return candidatesByIds(orgId, entries.map((c) => c.candidate), { page, limit, skip }, extra);
+}
+
+function fileCandidates(folder, candidateIds, memberId) {
+  const existing = new Set(folder.candidates.map((c) => String(c.candidate)));
+  let added = 0;
+  for (const cid of [...new Set(candidateIds.map(String))]) {
+    if (existing.has(cid)) continue;
+    folder.candidates.push({ candidate: cid, addedBy: memberId });
+    added += 1;
+  }
+  if (folder.candidates.length > FOLDER_CAPACITY) throw ApiError.badRequest(`A folder can hold up to ${FOLDER_CAPACITY} candidates`, undefined, 'FOLDER_FULL');
+  return added;
+}
+
+/** Only real candidate accounts can be filed. */
+const candidatesOnly = (ids) => User.find({ _id: { $in: ids }, role: 'candidate' }).distinct('_id');
+
+export async function createFolder(member, { name, description, candidateIds = [], ...sharing }) {
+  await assertNameFree(member, name);
+  const share = await resolveSharing(member, sharing);
+  const folder = new CandidateFolder({ organization: member.employer.organization, owner: member._id, name, description, visibility: 'private', sharedAccess: 'view', ...share });
+  if (candidateIds.length) fileCandidates(folder, await candidatesOnly(candidateIds), member._id);
+  try {
+    await folder.save();
+  } catch (err) {
+    if (err?.code === 11000) throw ApiError.conflict(`You already have a folder named "${name}"`, 'FOLDER_EXISTS');
+    throw err;
+  }
+  notifyShared(member, folder, folder.sharedWith);
+  return describeFolder(folder, member);
+}
+
+export async function updateFolder(member, id, { name, description, ...sharing }) {
+  const folder = await getFolder(member, id, 'owner');
+  if (name && name !== folder.name) {
+    if (String(folder.owner) === String(member._id)) await assertNameFree(member, name, folder._id);
+    folder.name = name;
+  }
+  if (description !== undefined) folder.description = description;
+  const before = new Set(folder.sharedWith.map(String));
+  const share = await resolveSharing(member, sharing, folder);
+  Object.assign(folder, share);
+  try {
+    await folder.save();
+  } catch (err) {
+    if (err?.code === 11000) throw ApiError.conflict(`A folder named "${folder.name}" already exists`, 'FOLDER_EXISTS');
+    throw err;
+  }
+  notifyShared(member, folder, folder.sharedWith.filter((x) => !before.has(String(x))));
+  return describeFolder(folder, member);
 }
 
 export async function deleteFolder(member, id) {
-  const folder = await getFolder(member, id, { write: true });
+  const folder = await getFolder(member, id, 'owner');
   await folder.deleteOne();
 }
 
 export async function addToFolder(member, id, candidateIds) {
-  const folder = await getFolder(member, id);
-  const existing = new Set(folder.candidates.map((c) => String(c.candidate)));
-  for (const cid of candidateIds) if (!existing.has(String(cid))) folder.candidates.push({ candidate: cid, addedBy: member._id });
-  if (folder.candidates.length > 5000) throw ApiError.badRequest('A folder can hold up to 5000 candidates');
+  const folder = await getFolder(member, id, 'edit');
+  const added = fileCandidates(folder, await candidatesOnly(candidateIds), member._id);
   await folder.save();
-  return { count: folder.candidates.length };
+  return { count: folder.candidates.length, added, alreadyThere: candidateIds.length - added };
 }
 
 export async function removeFromFolder(member, id, candidateIds) {
-  const folder = await getFolder(member, id);
+  const folder = await getFolder(member, id, 'edit');
   const remove = new Set(candidateIds.map(String));
+  const before = folder.candidates.length;
   folder.candidates = folder.candidates.filter((c) => !remove.has(String(c.candidate)));
   await folder.save();
-  return { count: folder.candidates.length };
+  return { count: folder.candidates.length, removed: before - folder.candidates.length };
+}
+
+/** Copy candidates to another folder, or move them (copy, then take them out of this one). */
+export async function transferCandidates(member, id, { candidateIds, targetFolderId, move = false }) {
+  if (String(id) === String(targetFolderId)) throw ApiError.badRequest('Choose a different folder', undefined, 'SAME_FOLDER');
+  const source = await getFolder(member, id, move ? 'edit' : 'view');
+  const target = await getFolder(member, targetFolderId, 'edit');
+  const inSource = new Set(source.candidates.map((c) => String(c.candidate)));
+  const ids = [...new Set(candidateIds.map(String))].filter((cid) => inSource.has(cid));
+  const added = fileCandidates(target, ids, member._id);
+  await target.save();
+  if (move) {
+    const gone = new Set(ids);
+    source.candidates = source.candidates.filter((c) => !gone.has(String(c.candidate)));
+    await source.save();
+  }
+  return { added, alreadyThere: ids.length - added, moved: move ? ids.length : 0, target: { _id: target._id, name: target.name, count: target.candidates.length } };
 }
 
 /* ----------------------------------------------------------------- invites */

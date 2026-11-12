@@ -5,17 +5,7 @@ import { Modal } from '../ui/feedback';
 import { CheckboxField, TextField } from '../ui/form';
 import { billingApi } from '../../services';
 import { formatCurrency } from '../../utils/format';
-
-function loadRazorpay() {
-  if (window.Razorpay) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = 'https://checkout.razorpay.com/v1/checkout.js';
-    s.onload = resolve;
-    s.onerror = () => reject(new Error('Could not load the payment window. Check your connection.'));
-    document.head.appendChild(s);
-  });
-}
+import { payWithRazorpay } from '../../utils/razorpay';
 
 const Row = ({ label, value, strong }) => (
   <div className={`flex justify-between text-sm ${strong ? 'border-t border-brand-border pt-2 font-bold text-brand-dark' : 'text-brand-gray'}`}>
@@ -61,30 +51,11 @@ const PlanCheckout = ({ plan, onClose, onPaid }) => {
         onPaid();
         return;
       }
-      await loadRazorpay();
-      const rz = data.razorpay;
-      new window.Razorpay({
-        key: rz.keyId,
-        order_id: rz.orderId,
-        amount: rz.amount,
-        currency: 'INR',
-        name: rz.name,
-        description: rz.description,
-        prefill: rz.prefill,
-        theme: { color: '#0151A0' },
-        modal: { ondismiss: () => setBusy(false) },
-        handler: async (r) => {
-          try {
-            await billingApi.verify({ orderId: data.order._id, razorpayOrderId: r.razorpay_order_id, razorpayPaymentId: r.razorpay_payment_id, razorpaySignature: r.razorpay_signature });
-            toast.success('Payment successful. Plan activated');
-            onPaid();
-          } catch (e) {
-            toast.error(e.message);
-          } finally {
-            setBusy(false);
-          }
-        },
-      }).open();
+      if (await payWithRazorpay(data)) {
+        toast.success('Payment successful. Plan activated');
+        onPaid();
+      }
+      setBusy(false);
     } catch (e) {
       toast.error(e.message);
       setBusy(false);

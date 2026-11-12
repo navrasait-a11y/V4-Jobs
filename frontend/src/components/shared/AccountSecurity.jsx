@@ -129,11 +129,24 @@ const SessionsCard = () => {
   );
 };
 
+const MyDataCard = () => {
+  const download = useAction(authApi.downloadMyData, { success: 'Your data file has been downloaded' });
+  return (
+    <Section title="Your data">
+      <p className="max-w-xl text-sm text-brand-gray">Download a copy of everything stored on your account: profile, applications, job alerts, saved items, orders and login history. The file is in JSON format.</p>
+      <Button size="sm" variant="outline" className="mt-3" loading={download.isPending} onClick={() => download.mutate()}>
+        Download my data
+      </Button>
+    </Section>
+  );
+};
+
 const AccountSecurity = () => (
   <div className="space-y-4">
     <PasswordCard />
     <TwoFactorCard />
     <SessionsCard />
+    <MyDataCard />
   </div>
 );
 

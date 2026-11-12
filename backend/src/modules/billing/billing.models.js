@@ -85,7 +85,15 @@ const orderSchema = new Schema(
     orderNumber: { type: String, required: true, unique: true },
     buyer: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     organization: { type: Schema.Types.ObjectId, ref: 'Organization', index: true },
-    plan: { type: Schema.Types.ObjectId, ref: 'Plan', required: true },
+    // plan = package purchase, wallet_topup = money added to the wallet (no plan, no GST until it is spent)
+    kind: { type: String, enum: ['plan', 'wallet_topup'], default: 'plan', index: true },
+    plan: {
+      type: Schema.Types.ObjectId,
+      ref: 'Plan',
+      required() {
+        return this.kind !== 'wallet_topup';
+      },
+    },
     planName: String,
     amount: { type: Number, required: true }, // plan price (pre-tax)
     discount: { type: Number, default: 0 },

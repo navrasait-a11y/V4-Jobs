@@ -30,6 +30,12 @@ export const setSessionExpiredHandler = (fn) => {
   onSessionExpired = fn;
 };
 
+let onMaintenance = () => {};
+/** Called when the API answers 503 MAINTENANCE (admin switched the site to maintenance mode). */
+export const setMaintenanceHandler = (fn) => {
+  onMaintenance = fn;
+};
+
 function deviceId() {
   try {
     let id = localStorage.getItem(DEVICE_KEY);
@@ -126,6 +132,7 @@ http.interceptors.response.use(
         throw await toApiError(refreshError);
       }
     }
+    if (error.response?.status === 503 && code === 'MAINTENANCE') onMaintenance();
     if (error.response?.status === 401 && ['SESSION_REVOKED', 'TOKEN_REVOKED', 'USER_NOT_FOUND'].includes(code)) {
       setAccessToken(null);
       onSessionExpired();

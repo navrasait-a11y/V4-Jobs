@@ -7,6 +7,8 @@ import HelpChatWidget from './components/common/HelpChatWidget';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import ScrollToTop from './components/common/ScrollToTop';
 import OfflineBanner from './components/common/OfflineBanner';
+import MaintenanceGate from './components/common/MaintenanceGate';
+import CookieConsent from './components/common/CookieConsent';
 import useAuthStore from './store/useAuthStore';
 
 const queryClient = new QueryClient({
@@ -14,7 +16,7 @@ const queryClient = new QueryClient({
     queries: {
       staleTime: 30 * 1000,
       refetchOnWindowFocus: false,
-      retry: (count, error) => count < 2 && !(error?.status >= 400 && error?.status < 500),
+      retry: (count, error) => count < 2 && !(error?.status >= 400 && error?.status < 500) && error?.code !== 'MAINTENANCE',
     },
   },
 });
@@ -31,8 +33,11 @@ function App() {
         <BrowserRouter>
           <ScrollToTop />
           <OfflineBanner />
-          <AppRoutes />
-          <HelpChatWidget />
+          <MaintenanceGate>
+            <AppRoutes />
+            <HelpChatWidget />
+            <CookieConsent />
+          </MaintenanceGate>
         </BrowserRouter>
         <Toaster position="top-right" toastOptions={{ duration: 3500, style: { fontSize: 14, maxWidth: 380, borderRadius: 8, padding: '8px 12px', color: '#111827', border: '1px solid #E6EAF0', boxShadow: '0 8px 24px -8px rgba(17,24,39,0.2)' }, success: { iconTheme: { primary: '#12885A', secondary: '#fff' } } }} />
       </QueryClientProvider>

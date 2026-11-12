@@ -81,7 +81,8 @@ const Block = ({ title, hint, children }) => (
   </fieldset>
 );
 
-const MemberModal = ({ member, onClose }) => {
+/** `api` lets the admin panel save through its own routes: { addMember(body), updateMember(id, body) }. */
+export const MemberModal = ({ member, onClose, api = orgApi, invalidate = ['team'] }) => {
   const editing = Boolean(member);
   const [form, setForm] = useState({
     fullName: member?.fullName || '',
@@ -106,11 +107,11 @@ const MemberModal = ({ member, onClose }) => {
         LIMITS.map(([k]) => [k, Object.fromEntries(PERIODS.filter((p) => limits[k][p] !== '').map((p) => [p, Number(limits[k][p])]))]).filter(([, v]) => Object.keys(v).length),
       );
       const access = { memberRole: form.memberRole, designation: form.designation || undefined, quotas, ...(custom ? { permissions: perms } : {}) };
-      if (editing) return orgApi.updateMember(member._id, access);
+      if (editing) return api.updateMember(member._id, access);
       const body = Object.fromEntries(Object.entries({ fullName: form.fullName, username: form.username, email: form.email, mobile: form.mobile, password: form.password }).filter(([, v]) => v !== ''));
-      return orgApi.addMember({ ...body, ...access });
+      return api.addMember({ ...body, ...access });
     },
-    { success: editing ? 'User updated' : form.password ? 'User added' : 'User added. An activation link was e-mailed', invalidate: ['team'], onSuccess: onClose },
+    { success: editing ? 'User updated' : form.password ? 'User added' : 'User added. An activation link was e-mailed', invalidate, onSuccess: onClose },
   );
 
   const submit = (e) => {

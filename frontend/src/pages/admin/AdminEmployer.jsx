@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import AccountPanel, { EMPLOYER_LABELS } from '../../components/admin/AccountPanel';
 import { MediaField, PlanAndWallet } from '../../components/admin/AdminActions';
 import UserActivity from '../../components/admin/UserActivity';
+import UsageReport from '../../components/admin/UsageReport';
 import Button from '../../components/ui/Button';
 import { Avatar, Badge, DataTable, Pagination, Section, StatTile, StatusBadge, Tabs } from '../../components/ui/data';
 import { ConfirmDialog, EmptyState, ErrorState, Icon, Modal, PageLoader } from '../../components/ui/feedback';
@@ -12,6 +13,7 @@ import { CheckboxField, ChoiceChips, Field, MobileField, SelectField, TextAreaFi
 import HierarchyField from '../../components/ui/HierarchyField';
 import { useAction, useDocumentTitle, useLookups } from '../../hooks/useData';
 import { DuplicateEmployer } from './AdminPages';
+import { MemberModal } from '../employer/Employees';
 import { adminApi } from '../../services';
 import { gstinHint } from '../../utils/gstin';
 import { formatDate, formatDateTime, formatNumber, timeAgo, titleCase, toInputDate } from '../../utils/format';
@@ -20,8 +22,8 @@ const STATUSES = ['active', 'pending', 'admin_review', 'blocked', 'suspended', '
 const KYC = ['not_submitted', 'under_review', 'verified', 'rejected', 'resubmission_required'];
 const CREDIT_KEYS = ['job_post', 'featured_job', 'resume_view', 'resume_download', 'invite', 'excel_download', 'resume_search'];
 const opts = (list) => list.map((v) => ({ value: v, label: titleCase(v) }));
-const TABS = ['company', 'team', 'jobs', 'kyc', 'billing', 'notes', 'activity'];
-const TAB_LABELS = { company: 'Company profile', team: 'Owner & team', jobs: 'Jobs', kyc: 'KYC documents', billing: 'Packages & credits', notes: 'Notes', activity: 'Activity' };
+const TABS = ['company', 'team', 'jobs', 'kyc', 'billing', 'usage', 'notes', 'activity'];
+const TAB_LABELS = { company: 'Company profile', team: 'Owner & team', jobs: 'Jobs', kyc: 'KYC documents', billing: 'Packages & credits', usage: 'Usage report', notes: 'Notes', activity: 'Activity' };
 
 const loginAs = async (userId) => {
   try {
@@ -222,6 +224,7 @@ const AddMember = ({ orgId, onClose }) => {
 const Team = ({ org, members, onChanged }) => {
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [access, setAccess] = useState(null);
   const ownerId = String(org.owner?._id || org.owner || '');
   return (
     <div className="space-y-4">
@@ -252,6 +255,11 @@ const Team = ({ org, members, onChanged }) => {
               <Button size="sm" variant="ghost" onClick={() => setEditing(m._id)}>
                 Edit
               </Button>
+              {String(m._id) !== ownerId && (
+                <Button size="sm" variant="ghost" onClick={() => setAccess(m)}>
+                  Role & limits
+                </Button>
+              )}
               <Button size="sm" variant="ghost" onClick={() => loginAs(m._id)}>
                 Login as
               </Button>
@@ -260,6 +268,7 @@ const Team = ({ org, members, onChanged }) => {
         />
       </Section>
       {editing && <MemberAccount userId={editing} onClose={() => { setEditing(null); onChanged(); }} />}
+      {access && <MemberModal member={access} invalidate={['admin']} api={{ updateMember: (memberId, body) => adminApi.patch(`/employers/${org._id}/members/${memberId}`, body) }} onClose={() => { setAccess(null); onChanged(); }} />}
       {adding && <AddMember orgId={org._id} onClose={() => { setAdding(false); onChanged(); }} />}
     </div>
   );
@@ -275,12 +284,76 @@ const MemberAccount = ({ userId, onClose }) => {
   );
 };
 
+/** Bulk job / internship posting for one employer from the Excel template. */
+const ImportJobs = ({ orgId, onClose }) => {
+  const [file, setFile] = useState(null);
+  const [publish, setPublish] = useState(false);
+  const [result, setResult] = useState(null);
+  const run = useAction(() => adminApi.upload('/jobs/import', { file }, { organizationId: orgId, publish }), { invalidate: ['admin'], silent: true, onSuccess: setResult });
+  const errors = result?.errors || [];
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Import jobs from Excel"
+      size="sm"
+      footer={
+        result ? (
+          <Button size="sm" variant="primaryBlue" onClick={onClose}>
+            Done
+          </Button>
+        ) : (
+          <Button size="sm" variant="primary" disabled={!file} loading={run.isPending} onClick={() => run.mutate()}>
+            Import
+          </Button>
+        )
+      }
+    >
+      {result ? (
+        <div className="space-y-2 text-sm text-brand-gray">
+          <p>
+            <b className="text-brand-dark">{result.created ?? 0}</b> jobs added{result.skipped !== undefined ? `, ${result.skipped} skipped` : ''}.
+          </p>
+          {errors.length > 0 && (
+            <ul className="max-h-48 list-disc space-y-1 overflow-y-auto pl-5 text-xs text-brand-red">
+              {errors.slice(0, 50).map((e, i) => (
+                <li key={i}>{typeof e === 'string' ? e : `Row ${e.row}: ${e.message || e.error}`}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-sm text-brand-gray">Upload the job sheet (.xlsx or .csv). Each row becomes one job or internship for this employer.</p>
+          <input type="file" accept=".xlsx,.xls,.csv" aria-label="Excel file" onChange={(e) => setFile(e.target.files?.[0] || null)} className="block w-full text-sm text-brand-gray file:mr-3 file:rounded-lg file:border-0 file:bg-brand-blue-tint file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-blue" />
+          <CheckboxField label="Publish right away" description="Leave off to keep the imported jobs as drafts for review" checked={publish} onChange={(e) => setPublish(e.target.checked)} />
+          {run.isError && <p className="text-sm text-brand-red">{run.error.message}</p>}
+        </div>
+      )}
+    </Modal>
+  );
+};
+
 const OrgJobs = ({ orgId }) => {
   const navigate = useNavigate();
   const [page, setPage] = useState(1);
+  const [importing, setImporting] = useState(false);
   const q = useQuery({ queryKey: ['admin', 'org-jobs', orgId, page], queryFn: () => adminApi.list('/jobs', { organization: orgId, page, limit: 20 }), placeholderData: keepPreviousData });
+  const duplicate = useAction((id) => adminApi.post(`/jobs/${id}/duplicate`), { success: 'Copy saved as a draft', invalidate: ['admin'], onSuccess: (job) => job?._id && navigate(`/admin/jobs/${job._id}/edit`) });
   return (
-    <Section title="Jobs and internships" actions={<Button asChild size="sm" variant="primary"><Link to="/admin/jobs/post">Post for this employer</Link></Button>}>
+    <Section
+      title="Jobs and internships"
+      actions={
+        <span className="flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" leftIcon={<Icon name="upload" size={16} />} onClick={() => setImporting(true)}>
+            Import Excel
+          </Button>
+          <Button asChild size="sm" variant="primary">
+            <Link to="/admin/jobs/post">Post for this employer</Link>
+          </Button>
+        </span>
+      }
+    >
       <DataTable
         columns={[
           { key: 'title', header: 'Title', render: (j) => <span className="font-medium">{j.title}</span> },
@@ -292,9 +365,15 @@ const OrgJobs = ({ orgId }) => {
         rows={q.data?.data}
         query={q}
         onRowClick={(j) => navigate(`/admin/jobs/${j._id}/edit`)}
+        actions={(j) => (
+          <Button size="sm" variant="ghost" loading={duplicate.isPending && duplicate.variables === j._id} onClick={() => duplicate.mutate(j._id)}>
+            Duplicate
+          </Button>
+        )}
         empty={<EmptyState icon="work" title="No jobs yet" />}
       />
       <Pagination meta={q.data?.meta} onPage={setPage} />
+      {importing && <ImportJobs orgId={orgId} onClose={() => setImporting(false)} />}
     </Section>
   );
 };
@@ -493,6 +572,7 @@ const AdminEmployer = () => {
       {tab === 'jobs' && <OrgJobs orgId={id} />}
       {tab === 'kyc' && <Kyc org={org} onChanged={refetch} />}
       {tab === 'billing' && <Billing org={org} onChanged={refetch} />}
+      {tab === 'usage' && (ownerId ? <UsageReport userId={ownerId} /> : <EmptyState title="No owner account" />)}
       {tab === 'notes' && <Notes org={org} tracking={query.data.adminTracking} onChanged={refetch} />}
       {tab === 'activity' && (ownerId ? <UserActivity userId={ownerId} /> : <EmptyState title="No owner account" />)}
 

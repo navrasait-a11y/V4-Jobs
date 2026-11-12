@@ -12,6 +12,7 @@ import { redisStatus } from './config/redis.js';
 import { requestId, sanitizeInput } from './shared/middleware/security.js';
 import { apiLimiter } from './shared/middleware/rateLimit.js';
 import { notFound, errorHandler } from './shared/middleware/error.js';
+import { maintenanceGate } from './shared/middleware/maintenance.js';
 import { storageRoot } from './shared/services/storage.service.js';
 import routes from './routes.js';
 import { paymentWebhook } from './modules/billing/billing.controller.js';
@@ -76,7 +77,7 @@ export function createApp() {
     app.use('/uploads/public', express.static(path.join(storageRoot, 'public'), { maxAge: '30d', index: false, dotfiles: 'deny' }));
   }
 
-  app.use(config.apiPrefix, apiLimiter, routes);
+  app.use(config.apiPrefix, apiLimiter, maintenanceGate, routes);
 
   app.use(notFound);
   app.use(errorHandler);

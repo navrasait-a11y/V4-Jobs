@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Button from '../ui/Button';
-import { Modal } from '../ui/feedback';
+import { Alert, Modal } from '../ui/feedback';
 import { CheckboxField, SelectField, TextAreaField, TextField } from '../ui/form';
 import { Section } from '../ui/data';
 import { useAction } from '../../hooks/useData';
 import { adminApi } from '../../services';
 import { formatCurrency } from '../../utils/format';
+import { AlertCriteriaFields, criteriaError, criteriaForm, FREQUENCIES, toCriteria } from '../candidate/JobAlertFields';
 
 const inv = { invalidate: ['admin'] };
 
@@ -50,6 +51,47 @@ export const SendTemplate = ({ template, onClose }) => {
         <CheckboxField label="Send me a copy" checked={copy} onChange={(e) => setCopy(e.target.checked)} />
       </div>
     </Modal>
+  );
+};
+
+/** PRD: "Create Job Alerts Upto 1000 Candidates Selection" - one alert, saved for every ticked candidate. */
+export const BulkJobAlert = ({ candidateIds, onDone }) => {
+  const MAX = 1000;
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ name: '', frequency: 'daily', ...criteriaForm() });
+  const [error, setError] = useState('');
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e?.target ? e.target.value : e }));
+  const create = useAction(() => adminApi.post('/job-alerts/bulk-create', { candidateIds, alert: { name: form.name.trim(), frequency: form.frequency, criteria: toCriteria(form) } }), {
+    ...inv,
+    success: (r) => `Job alert created for ${r?.created ?? candidateIds.length} candidates`,
+    onSuccess: () => {
+      setOpen(false);
+      onDone?.();
+    },
+  });
+  const submit = () => {
+    const problem = form.name.trim().length < 2 ? 'Give the alert a name' : criteriaError(form);
+    setError(problem);
+    if (!problem) create.mutate();
+  };
+  return (
+    <>
+      <Button size="sm" variant="outline" disabled={candidateIds.length > MAX} title={candidateIds.length > MAX ? `Up to ${MAX} candidates at a time` : undefined} onClick={() => setOpen(true)}>
+        Create job alert
+      </Button>
+      {open && (
+        <Modal open onClose={() => setOpen(false)} title="Create job alert" subtitle={`For ${candidateIds.length} selected candidate${candidateIds.length === 1 ? '' : 's'}`} size="xl" footer={<Button size="sm" variant="primaryBlue" loading={create.isPending} onClick={submit}>Create alert</Button>}>
+          <div className="space-y-5">
+            {error && <Alert tone="error">{error}</Alert>}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <TextField label="Alert name" required value={form.name} onChange={set('name')} maxLength={120} placeholder="e.g. Sales jobs in Jaipur" />
+              <SelectField label="How often" placeholder={null} options={FREQUENCIES} value={form.frequency} onChange={set('frequency')} />
+            </div>
+            <AlertCriteriaFields form={form} set={set} setForm={setForm} />
+          </div>
+        </Modal>
+      )}
+    </>
   );
 };
 

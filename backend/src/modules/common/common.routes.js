@@ -9,7 +9,9 @@ import { dateRangeFilter } from '../../shared/utils/timespan.js';
 import { pagination, timespan, username, shortText, stringList, socialLink } from '../../shared/validators/common.js';
 import { resolveLocalSigned, putFile, deleteFile } from '../../shared/services/storage.service.js';
 import { upload } from '../../shared/middleware/upload.js';
-import { uploadLimiter } from '../../shared/middleware/rateLimit.js';
+import { uploadLimiter, heavyLimiter } from '../../shared/middleware/rateLimit.js';
+import { exportMyData } from '../users/dataExport.service.js';
+import { logActivity } from '../activity/activity.service.js';
 import User from '../users/user.model.js';
 import { assertIdentityAvailable, validateUsername } from '../users/account.service.js';
 import ApiError from '../../shared/errors/ApiError.js';
@@ -135,6 +137,16 @@ r.post('/me/avatar', authenticate, uploadLimiter, upload('image', 'avatar'), asy
   await user.save();
   if (old) await deleteFile(old);
   return ok(res, user.avatar, 'Profile photo updated');
+});
+
+/** Privacy: "Download my data" - one JSON file with everything stored about the signed-in account. */
+r.get('/me/data-export', authenticate, heavyLimiter, async (req, res) => {
+  const data = await exportMyData(req.user._id);
+  logActivity(req, { type: 'data_export' });
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="freejobwala-my-data-${new Date().toISOString().slice(0, 10)}.json"`);
+  res.setHeader('Cache-Control', 'private, no-store');
+  return res.send(JSON.stringify(data, null, 2));
 });
 
 r.get('/me/login-history', authenticate, validate({ query: Joi.object(pagination) }), async (req, res) => {

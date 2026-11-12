@@ -188,8 +188,26 @@ r.delete('/searches/:id', requireEmployer('saved_search.manage_own', 'saved_sear
 });
 
 /* folders */
-r.get('/folders', requireEmployer(), validate({ query: Joi.object({ ...timespan, tab: Joi.string().valid('mine', 'shared', 'all').default('mine') }) }), async (req, res) =>
-  ok(res, await s.listFolders(req.user, req.query)),
+const folderSharing = {
+  visibility: Joi.string().valid('private', 'team', 'selected'),
+  sharedWith: Joi.array().items(objectId).max(100),
+  sharedAccess: Joi.string().valid('view', 'edit'),
+};
+const folderName = Joi.string().trim().min(2).max(60).messages({ 'string.min': 'Folder name needs at least 2 characters', 'string.max': 'Folder name can be up to 60 characters', 'string.empty': 'Enter a folder name' });
+r.get(
+  '/folders',
+  requireEmployer(),
+  validate({
+    query: Joi.object({
+      ...timespan,
+      tab: Joi.string().valid('mine', 'shared', 'all').default('mine'),
+      q: Joi.string().trim().max(60).allow(''),
+      sort: Joi.string().valid('-updatedAt', 'updatedAt', 'name', '-name', '-count', '-createdAt').default('-updatedAt'),
+      page: Joi.number().integer().min(1).default(1),
+      limit: Joi.number().integer().min(1).max(200).default(200),
+    }),
+  }),
+  async (req, res) => ok(res, await s.listFolders(req.user, req.query)),
 );
 r.get(
   '/folders/system/:key',
@@ -200,21 +218,17 @@ r.get(
 r.post(
   '/folders',
   requireEmployer('folder.manage_own', 'folder.manage_all'),
-  validate({ body: Joi.object({ name: Joi.string().trim().max(120).required(), description: Joi.string().max(500).allow('') }) }),
+  validate({ body: Joi.object({ name: folderName.required(), description: Joi.string().trim().max(300).allow(''), candidateIds: bulkIds(500).optional(), ...folderSharing }) }),
   async (req, res) => created(res, await s.createFolder(req.user, req.body), 'Folder created'),
 );
-r.get('/folders/:id', requireEmployer(), validate({ params: idParam, query: Joi.object(pagination) }), async (req, res) =>
-  paginated(res, await s.folderCandidates(req.user, req.params.id, parsePagination(req.query))),
+r.get('/folders/:id/details', requireEmployer(), validate({ params: idParam }), async (req, res) => ok(res, await s.folderDetails(req.user, req.params.id)));
+r.get('/folders/:id', requireEmployer(), validate({ params: idParam, query: Joi.object({ ...pagination, q: Joi.string().trim().max(60).allow('') }) }), async (req, res) =>
+  paginated(res, await s.folderCandidates(req.user, req.params.id, { ...parsePagination(req.query), q: req.query.q })),
 );
 r.patch(
   '/folders/:id',
   requireEmployer('folder.manage_own', 'folder.manage_all'),
-  validate({
-    params: idParam,
-    body: Joi.object({ name: Joi.string().trim().max(120), description: Joi.string().max(500).allow(''), sharedWith: Joi.array().items(objectId).max(50) }).min(
-      1,
-    ),
-  }),
+  validate({ params: idParam, body: Joi.object({ name: folderName, description: Joi.string().trim().max(300).allow(''), ...folderSharing }).min(1) }),
   async (req, res) => ok(res, await s.updateFolder(req.user, req.params.id, req.body), 'Folder updated'),
 );
 r.delete('/folders/:id', requireEmployer('folder.manage_own', 'folder.manage_all'), validate({ params: idParam }), async (req, res) => {
@@ -226,6 +240,12 @@ r.post('/folders/:id/candidates', requireEmployer(), validate({ params: idParam,
 );
 r.delete('/folders/:id/candidates', requireEmployer(), validate({ params: idParam, body: Joi.object({ candidateIds: bulkIds(500) }) }), async (req, res) =>
   ok(res, await s.removeFromFolder(req.user, req.params.id, req.body.candidateIds), 'Removed from folder'),
+);
+r.post(
+  '/folders/:id/transfer',
+  requireEmployer(),
+  validate({ params: idParam, body: Joi.object({ candidateIds: bulkIds(500), targetFolderId: objectId.required(), move: Joi.boolean().default(false) }) }),
+  async (req, res) => ok(res, await s.transferCandidates(req.user, req.params.id, req.body), req.body.move ? 'Moved' : 'Copied'),
 );
 
 /* invites */

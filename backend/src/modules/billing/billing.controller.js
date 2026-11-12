@@ -16,6 +16,7 @@ export const quote = async (req, res) => {
   });
 };
 export const checkout = async (req, res) => created(res, await s.createOrder(req.user, req.body), 'Order created');
+export const walletTopup = async (req, res) => created(res, await s.createWalletTopup(req.user, req.body), 'Order created');
 export const verify = async (req, res) => ok(res, await s.verifyPayment(req.user, req.body), 'Payment successful');
 export const subscriptions = async (req, res) => ok(res, await s.mySubscriptions(req.user));
 export const autoRenew = async (req, res) => ok(res, await s.setAutoRenew(req.user, req.params.id, req.body.autoRenew), 'Updated');

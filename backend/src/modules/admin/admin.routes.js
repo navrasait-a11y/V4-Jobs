@@ -49,7 +49,7 @@ import { LoginAttempt } from '../auth/auth.models.js';
 import { containsRegex } from '../../shared/utils/helpers.js';
 import User from '../users/user.model.js';
 import { impersonate } from '../auth/auth.service.js';
-import { listSettings, setSetting, DEFAULT_SETTINGS } from '../settings/settings.service.js';
+import { listSettings, saveSetting, DEFAULT_SETTINGS } from '../settings/settings.service.js';
 import * as analytics from '../analytics/analytics.service.js';
 import * as users from './admin.users.service.js';
 import * as jobs from './admin.jobs.service.js';
@@ -780,7 +780,7 @@ r.put(
     body: Joi.object({ value: Joi.any().required() }),
   }),
   async (req, res) => {
-    await setSetting(req.params.key, req.body.value, req.user._id);
+    await saveSetting(req.params.key, req.body.value, req.user._id);
     audit(req, {
       action: 'setting.update',
       entity: 'Setting',

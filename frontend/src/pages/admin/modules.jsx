@@ -3,7 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import Button from '../../components/ui/Button';
 import { Badge, StatusBadge } from '../../components/ui/data';
-import { AlertSendJobs, JobCandidates, SendTemplate } from '../../components/admin/AdminActions';
+import { Icon } from '../../components/ui/feedback';
+import { AlertSendJobs, BulkJobAlert, JobCandidates, SendTemplate } from '../../components/admin/AdminActions';
 import InvoiceViewer from '../../components/shared/InvoiceViewer';
 import { adminApi } from '../../services';
 import { formatCurrency, formatDate, formatDateTime, formatLocations, titleCase } from '../../utils/format';
@@ -219,10 +220,26 @@ export const MODULES = {
   candidates: {
     title: 'Candidates',
     path: '/candidates',
+    stats: {
+      path: '/stats/candidates',
+      tiles: [
+        { key: 'all', label: 'All', filter: {} },
+        { key: 'active', label: 'Active', filter: { status: 'active' } },
+        { key: 'pending', label: 'Pending', filter: { status: 'pending' } },
+        { key: 'adminReview', label: 'Admin review', filter: { status: 'admin_review' } },
+        { key: 'blocked', label: 'Blocked', filter: { status: 'blocked' } },
+        { key: 'directRegistered', label: 'Direct registered', filter: { source: 'direct' } },
+        { key: 'jobAppliedRegistered', label: 'Registered by job apply', filter: { source: 'job_apply' } },
+        { key: 'excelImported', label: 'Excel imported', filter: { source: 'excel_import' } },
+        { key: 'jobApplied', label: 'Applied to a job', filter: { jobApplied: 'true' } },
+        { key: 'trashed', label: 'Trash', filter: { status: 'trashed' } },
+      ],
+    },
+    downloads: [{ label: 'Resumes (ZIP)', path: '/candidates/export-resumes', selection: true, name: 'candidate-resumes.zip' }],
     rowLink: (r) => `/admin/candidates/${r._id}`,
-    columns: [person, two('job', 'Current', (r) => r.profile?.currentJobTitle || r.currentJobTitle, (r) => r.uid), { key: 'source', header: 'Source', render: (r) => titleCase(r.source || '') }, status(), date()],
+    columns: [person, two('job', 'Profile', (r) => r.profile?.currentJobTitle || r.profile?.experienceLevel, (r) => [r.profile?.currentLocation?.city, r.uid].filter(Boolean).join(' · ')), { key: 'source', header: 'Source', render: (r) => titleCase(r.source || '') }, status(), date()],
     filters: [{ key: 'status', label: 'Status', options: USER_STATUS }, { key: 'source', label: 'Source', options: opt(['direct', 'excel_import', 'job_apply', 'event_apply', 'job_alert', 'admin', 'google']) }, { key: 'hasResume', label: 'Resume', options: [{ value: 'true', label: 'Has resume' }] }],
-    bulk: { path: '/candidates/bulk', actions: USER_BULK, pickers: CANDIDATE_PICKERS },
+    bulk: { path: '/candidates/bulk', actions: USER_BULK, pickers: CANDIDATE_PICKERS, custom: ({ selected, clear }) => <BulkJobAlert candidateIds={selected} onDone={clear} /> },
     editFields: [
       { key: 'user.fullName', from: 'fullName', label: 'Full name' },
       { key: 'user.email', from: 'email', label: 'Email', inputType: 'email' },
@@ -251,6 +268,22 @@ export const MODULES = {
   employers: {
     title: 'Employers',
     path: '/employers',
+    searchPlaceholder: 'Search by company, owner, e-mail, mobile or ID',
+    stats: {
+      path: '/stats/employers',
+      pick: (data, f) => data[f.type === 'company' ? 'companies' : f.type === 'consultancy' ? 'consultancies' : 'employers'],
+      tiles: [
+        { key: 'all', label: 'All', filter: {} },
+        { key: 'active', label: 'Active', filter: { status: 'active' } },
+        { key: 'pending', label: 'Pending', filter: { status: 'pending' } },
+        { key: 'adminReview', label: 'Admin review', filter: { status: 'admin_review' } },
+        { key: 'blocked', label: 'Blocked', filter: { status: 'blocked' } },
+        { key: 'directRegistered', label: 'Direct registered', filter: { source: 'direct' } },
+        { key: 'jobPostRegistered', label: 'Registered by job post', filter: { source: 'job_post' } },
+        { key: 'excelImported', label: 'Excel imported', filter: { source: 'excel_import' } },
+        { key: 'trashed', label: 'Trash', filter: { status: 'trashed' } },
+      ],
+    },
     rowLink: (r) => `/admin/employers/${r._id}`,
     columns: [two('name', 'Employer', (r) => r.name, (r) => r.uid), { key: 'type', header: 'Type', render: (r) => titleCase(r.type || '') }, { key: 'kyc', header: 'KYC', render: (r) => <StatusBadge status={r.kycStatus} /> }, status(), date()],
     filters: [{ key: 'type', label: 'Type', options: opt(['company', 'consultancy']) }, { key: 'status', label: 'Status', options: USER_STATUS }, { key: 'kycStatus', label: 'KYC', options: opt(['not_submitted', 'under_review', 'verified', 'rejected', 'resubmission_required']) }],
@@ -280,9 +313,25 @@ export const MODULES = {
   jobs: {
     title: 'Jobs',
     path: '/jobs',
+    searchPlaceholder: 'Search by job title, employer, client or job ID',
+    stats: {
+      path: '/stats/jobs',
+      tiles: [
+        { key: 'all', label: 'All', filter: {} },
+        { key: 'active', label: 'Active', filter: { status: 'active' } },
+        { key: 'pending', label: 'Pending', filter: { status: 'pending' } },
+        { key: 'adminReview', label: 'Admin review', filter: { status: 'admin_review' } },
+        { key: 'draft', label: 'Drafts', filter: { status: 'draft' } },
+        { key: 'expired', label: 'Expired', filter: { status: 'expired' } },
+        { key: 'closed', label: 'Closed', filter: { status: 'closed' } },
+        { key: 'rejected', label: 'Rejected', filter: { status: 'rejected' } },
+        { key: 'excelImported', label: 'Excel imported', filter: { source: 'excel_import' } },
+        { key: 'trashed', label: 'Trash', filter: { status: 'trashed' } },
+      ],
+    },
     rowLink: (r) => `/admin/jobs/${r._id}/edit`,
     columns: [two('title', 'Job', (r) => r.title, (r) => r.orgSnapshot?.name), { key: 'location', header: 'Location', render: (r) => formatLocations(r) }, { key: 'kind', header: 'Kind', render: (r) => titleCase(r.kind) }, { key: 'apps', header: 'Applications', render: (r) => r.stats?.applications || 0 }, status(), date()],
-    filters: [{ key: 'status', label: 'Status', options: opt(['draft', 'pending', 'admin_review', 'active', 'closed', 'expired', 'rejected', 'trashed']) }, { key: 'kind', label: 'Kind', options: opt(['job', 'internship']) }],
+    filters: [{ key: 'status', label: 'Status', options: opt(['draft', 'pending', 'admin_review', 'active', 'closed', 'expired', 'rejected', 'trashed']) }, { key: 'kind', label: 'Kind', options: opt(['job', 'internship']) }, { key: 'organizationType', label: 'Posted by', options: [{ value: 'company', label: 'Companies' }, { value: 'consultancy', label: 'Consultancies' }] }],
     bulk: { path: '/jobs/bulk', actions: JOB_BULK, pickers: JOB_PICKERS },
     headerActions: (
       <Button asChild size="sm" variant="primary">
@@ -297,13 +346,16 @@ export const MODULES = {
       { key: 'expiresAt', label: 'Expires', type: 'datetime' },
     ],
     exportPath: '/jobs/export',
+    editLabel: 'Status',
     rowActions: (r) => (
       <>
         <Open to={`/admin/jobs/${r._id}/edit`}>Edit</Open>
-        <Link to={`/jobs/${r.slug}`} target="_blank" className="px-2 text-xs font-semibold text-brand-blue">
-          Public page
-        </Link>
-        <WithModal label="Candidates" render={(close) => <JobCandidates job={r} onClose={close} />} />
+        <WithModal label="Invite / assign" render={(close) => <JobCandidates job={r} onClose={close} />} />
+        <Button asChild size="sm" variant="ghost">
+          <Link to={`/jobs/${r.slug}`} target="_blank" rel="noopener noreferrer" aria-label={`Open the public page of ${r.title}`} title="Open public page">
+            <Icon name="open_in_new" size={16} />
+          </Link>
+        </Button>
       </>
     ),
   },
@@ -317,8 +369,8 @@ export const MODULES = {
       { key: 'stage', label: 'Stage', options: opt(['applied', 'screened', 'interview_scheduled', 'offered', 'hired', 'rejected', 'withdrawn']) },
       { key: 'view', label: 'Responses', options: [{ value: 'new', label: 'New responses' }, { value: 'pending', label: 'Action pending' }, { value: 'viewed', label: 'Viewed' }] },
       { key: 'screeningStatus', label: 'Screening', options: [{ value: 'shortlisted', label: 'Shortlisted' }, { value: 'maybe_relevant', label: 'Maybe relevant' }, { value: 'maybe_shortlist', label: 'Maybe shortlist' }, { value: 'rejected', label: 'Rejected' }, { value: 'on_hold', label: 'On hold' }, { value: 'not_interested', label: 'Not interested' }] },
-      { key: 'category', label: 'Category', options: [{ value: 'job', label: 'Job vacancy' }, { value: 'internship', label: 'Internship' }, { value: 'invite', label: 'Invite response' }] },
-      { key: 'source', label: 'Source', options: opt(['direct', 'invite', 'job_alert', 'event', 'recommendation', 'admin']) },
+      { key: 'kind', label: 'Category', options: [{ value: 'job', label: 'Job vacancy' }, { value: 'internship', label: 'Internship' }] },
+      { key: 'source', label: 'Source', options: [{ value: 'direct', label: 'Direct apply' }, { value: 'without_login', label: 'Applied without login' }, { value: 'invite', label: 'Invite response' }, { value: 'job_alert', label: 'Job alert' }, { value: 'event', label: 'Job event' }, { value: 'recommendation', label: 'Recommendation' }, { value: 'admin_assign', label: 'Assigned by admin' }] },
     ],
     search: true,
     editFields: [
@@ -328,6 +380,8 @@ export const MODULES = {
       { key: 'comment', label: 'Add a comment', type: 'textarea', rows: 3 },
     ],
     exportPath: '/responses/export',
+    downloads: [{ label: 'Resumes (ZIP)', path: '/responses/export-resumes', name: 'application-resumes.zip' }],
+    searchPlaceholder: 'Search by candidate name, e-mail or mobile',
   },
 
   'job-alerts': {
@@ -394,7 +448,7 @@ export const MODULES = {
   orders: {
     title: 'Orders',
     path: '/billing/orders',
-    columns: [{ key: 'orderNumber', header: 'Order' }, { key: 'plan', header: 'Plan', render: (r) => r.planSnapshot?.name || '—' }, { key: 'total', header: 'Total', render: (r) => formatCurrency(r.total ?? r.amount) }, status(), date()],
+    columns: [{ key: 'orderNumber', header: 'Order' }, { key: 'plan', header: 'Item', render: (r) => r.planName || '—' }, { key: 'buyer', header: 'Buyer', render: (r) => r.organization?.name || r.buyer?.fullName || '—' }, { key: 'total', header: 'Total', render: (r) => formatCurrency(r.total ?? r.amount) }, status(), date()],
     filters: [{ key: 'status', label: 'Status', options: opt(['created', 'paid', 'failed', 'cancelled', 'refunded']) }],
     exportPath: '/billing/orders/export',
     rowActions: (r, h) => (
@@ -403,6 +457,21 @@ export const MODULES = {
         <OrderStatus order={r} refresh={h.refresh} />
       </>
     ),
+  },
+  wallet: {
+    title: 'Wallet Transactions',
+    subtitle: 'Top-ups, plan payments, refunds and admin adjustments',
+    path: '/billing/wallet/transactions',
+    search: false,
+    columns: [
+      two('owner', 'Account', (r) => r.wallet?.organization?.name || r.wallet?.user?.fullName, (r) => r.wallet?.organization?.uid || r.wallet?.user?.email),
+      { key: 'reason', header: 'Reason', render: (r) => titleCase(r.reason || '') },
+      { key: 'amount', header: 'Amount', render: (r) => <span className={r.type === 'credit' ? 'font-semibold text-brand-green' : 'font-semibold text-brand-red'}>{r.type === 'credit' ? '+' : '-'}{formatCurrency(r.amount)}</span> },
+      { key: 'balance', header: 'Balance after', render: (r) => formatCurrency(r.balanceAfter ?? 0) },
+      { key: 'ref', header: 'Reference', render: (r) => r.order?.orderNumber || r.note || (r.by?.fullName ? `By ${r.by.fullName}` : '—') },
+      stamp(),
+    ],
+    filters: [{ key: 'type', label: 'Type', options: opt(['credit', 'debit']) }, { key: 'reason', label: 'Reason', options: opt(['topup', 'purchase', 'refund', 'referral_reward', 'admin_adjustment', 'auto_renew']) }],
   },
   subscriptions: { title: 'Subscriptions', path: '/billing/subscriptions', search: false, columns: [{ key: 'plan', header: 'Plan', render: (r) => r.planSnapshot?.name || r.plan?.name || '—' }, status(), date('startsAt', 'Starts'), date('endsAt', 'Ends')] },
   'sales-leads': {

@@ -66,6 +66,7 @@ Calls that use the refresh cookie must include credentials: `fetch(url, { creden
 | 422 | `VALIDATION_ERROR` | Map `details[].field` to the form fields |
 | 429 | `RATE_LIMITED`, `OTP_COOLDOWN`, `ACCOUNT_LOCKED` | Show message or a countdown |
 | 500 | `INTERNAL_ERROR` | Generic error and `requestId` |
+| 503 | `MAINTENANCE` | Admin switched on maintenance mode (`platform.maintenanceMode`). Show the maintenance screen. `/auth/*`, `/settings/public`, `/enums`, `/admin/*` and any request with an admin token keep working |
 
 ### Lists, filters and exports
 
@@ -444,7 +445,9 @@ Employers can mail applicants or candidates whose contact they unlocked. Candida
 | PATCH | `/billing/subscriptions/:id/auto-renew` | ✔ | `{ autoRenew }` (renews from the wallet before expiry) |
 | GET | `/billing/orders?status=` | ✔ | Transactions with invoice numbers |
 | GET | `/billing/invoices/:id?format=html` | ✔ | GST tax invoice. Fetch with the auth header and open the blob in a new tab to print or save as PDF |
-| GET | `/billing/wallet` | ✔ | `{ balance, transactions }` |
+| GET | `/billing/wallet?page=&limit=` | ✔ | `{ balance, transactions{ items, total, page, limit } }`. Item: `type` credit/debit, `amount`, `balanceAfter`, `reason` (`topup`, `purchase`, `refund`, `referral_reward`, `admin_adjustment`) |
+| POST | `/billing/wallet/topup` | ✔ | `{ amount }` within the public setting `payments.walletTopup` (`{ enabled, min, max }`) → same response as checkout. Pay with Razorpay, then `/billing/verify`. No GST on a top-up. Errors: `TOPUP_DISABLED`, `TOPUP_AMOUNT_INVALID`, `PAYMENTS_DISABLED` |
+| GET | `/me/data-export` | ✔ | "Download my data" JSON file with everything stored on the signed-in account |
 
 Checkout flow:
 
@@ -593,11 +596,16 @@ Needs an active plan with resume-database access, otherwise `402 FEATURE_LOCKED`
 | GET | `/employer/talent/searches/recent?timespan=` | Recent searches (also used by the header search shortcut) |
 | GET | `/employer/talent/searches?tab=mine\|shared\|all&timespan=today\|yesterday\|2d\|5d\|7d\|custom&from&to` | Saved searches ("My saved searches", "Searches shared with me"). `timespan` = PRD "Searched filters" on last update |
 | POST / PATCH / DELETE | `/employer/talent/searches[/:id]` | `{ name, filters, sharedWith?[memberIds], alertEnabled? }` |
-| GET | `/employer/talent/folders?tab=mine\|shared\|all&timespan=&from&to` | `{ system:{accessed,commented,contacted,shortlisted,rejected,hold}, folders[{_id,name,count,sharedWith}] }` |
-| GET | `/employer/talent/folders/system/:key` | Candidates in a system folder |
-| POST / PATCH / DELETE | `/employer/talent/folders[/:id]` | Create, rename or delete. `sharedWith` shares the folder |
-| GET | `/employer/talent/folders/:id` | Candidates in the folder |
-| POST / DELETE | `/employer/talent/folders/:id/candidates` | `{ candidateIds: [] }` |
+| GET | `/employer/talent/folders?tab=mine\|shared\|all&q=&sort=&page=&limit=&timespan=&from&to` | `{ system:{accessed,commented,contacted,shortlisted,rejected,hold}, folders[], total, page, limit, counts{mine,shared}, capacity }`. Folder: `{ _id, name, description, count, visibility, sharedAccess, sharedWith[{_id,fullName,avatar,designation}], owner{...}, access, createdAt, updatedAt }`. `sort`: `-updatedAt` (default), `-createdAt`, `name`, `-name`, `-count`. `tab=shared` = other people's folders I can open; `tab=all` = everything I can open (the whole account for `folder.manage_all`) |
+| GET | `/employer/talent/folders/system/:key` | Candidates in a smart folder (`accessed`, `commented`, `contacted`, `shortlisted`, `rejected`, `hold`) |
+| POST | `/employer/talent/folders` | `{ name (2-60), description? (≤300), visibility?, sharedWith?[], sharedAccess?, candidateIds?[] }` → the folder. `candidateIds` files candidates in the same step. 409 `FOLDER_EXISTS` when the user already has a folder with that name |
+| PATCH / DELETE | `/employer/talent/folders/:id` | Rename, describe, share or delete. Owner only (or `folder.manage_all`) |
+| GET | `/employer/talent/folders/:id/details` | The folder with `access` and `capacity` (5000) |
+| GET | `/employer/talent/folders/:id?q=&page=&limit=` | Candidates in the folder, newest filed first, each with `addedAt` and `addedBy` (name). `q` searches by candidate name |
+| POST / DELETE | `/employer/talent/folders/:id/candidates` | `{ candidateIds: [] }` → `{ count, added, alreadyThere }` / `{ count, removed }`. Needs `access` owner or edit |
+| POST | `/employer/talent/folders/:id/transfer` | `{ candidateIds[], targetFolderId, move? }` → `{ added, alreadyThere, moved, target{_id,name,count} }`. Copy needs view on the source; move needs edit. The target always needs edit |
+
+**Folder sharing.** `visibility`: `private` (only the owner), `team` (every user of the employer account) or `selected` (the users in `sharedWith`; at least one, same account only). `sharedAccess`: `view` (open only) or `edit` (also add and remove candidates). Renaming, sharing and deleting stay with the owner. Sharing needs the team permission `saved_candidates.share` (403 `PERMISSION_DENIED` otherwise). Each folder row carries `access` for the signed-in user: `owner`, `edit` or `view`. Errors: `FOLDER_FORBIDDEN` (not shared with you), `FOLDER_READ_ONLY`, `SHARE_NEEDS_MEMBERS`, `FOLDER_FULL`, `SAME_FOLDER`. Newly added people get an in-app notification `folder_shared`.
 | POST | `/employer/talent/jobs/:jobId/invites` | `{ candidateIds:[≤500], message? }` – **Bulk invite**. Already invited or applied candidates are skipped automatically. Uses `invite` credits |
 | GET | `/employer/talent/jobs/:jobId/invites?status` | |
 
@@ -765,7 +773,9 @@ Locations: `GET/POST /admin/locations`, `PATCH/DELETE /admin/locations/:id`, `PO
 * **Coupons:** `GET/POST /admin/billing/coupons`, `PATCH/DELETE /admin/billing/coupons/:id`. Body: `code, type: percent|flat, value, maxDiscount, minAmount, validFrom, validTo, usageLimit, perUserLimit, plans[], audience, isActive`.
 * **Orders and transactions:** `GET /admin/billing/orders` (`status, gateway, organization, buyer, q=orderNo, timespan`; `meta.summary` = revenue and GST), `GET /admin/billing/orders/export`, `PATCH /admin/billing/orders/:id/status` (`paid` fulfils the order manually; also `failed`, `cancelled`, `refunded`), `GET /admin/billing/invoices/:id?format=html`.
 * **Subscriptions:** `GET /admin/billing/subscriptions`. `POST /admin/billing/assign-plan` `{ planId, organizationId | userId, note?, startsAt? }` (**Assign packages / Profile Booster**).
-* **Wallet:** `POST /admin/billing/wallet/adjust` `{ organizationId|userId, type: credit|debit, amount, note }`, `GET /admin/billing/wallet/transactions`.
+* **Wallet:** `POST /admin/billing/wallet/adjust` `{ organizationId|userId, type: credit|debit, amount, note }`, `GET /admin/billing/wallet/transactions` (`type`, `reason`, `timespan`; each row has the wallet owner, order number and admin). Marking a paid wallet top-up `refunded` also takes the amount back out of the wallet (as much as is still there).
+* **Checkout response** now carries `razorpay.methods` (`{ upi, card, netbanking, wallet }` from the setting `payments.methods`): pass it to Razorpay Checkout as `method`. `payments.methods.razorpay = false` switches online payments off (`PAYMENTS_DISABLED`).
+* **Settings that act immediately:** `platform.maintenanceMode` (+ `platform.maintenanceMessage`), `ads.enabled` (off = `/cms/ads` returns nothing), `ads.adsenseClientId` (needed for ads of type `adsense`; the ad's `adUnitId` is the AdSense slot id), `payments.walletTopup`.
 
 ### 7.9 CMS, ads, e-mail templates and leads
 

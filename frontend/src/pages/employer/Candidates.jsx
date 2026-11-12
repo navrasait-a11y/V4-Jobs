@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import UpsellNotice from '../../components/employer/UpsellNotice';
+import { AddToFolderModal } from '../../components/employer/folders';
 import ReportModal from '../../components/common/ReportModal';
 import Button from '../../components/ui/Button';
 import { Avatar, Badge, DetailRow, PageHeader, Pagination, Section, SimpleSelect, StatusBadge } from '../../components/ui/data';
@@ -339,27 +340,6 @@ const InviteModal = ({ ids, onClose, onDone }) => {
   );
 };
 
-const FolderModal = ({ ids, onClose }) => {
-  const [folder, setFolder] = useState('');
-  const [name, setName] = useState('');
-  const { data } = useQuery({ queryKey: ['folders'], queryFn: () => talentApi.folders({ tab: 'mine' }) });
-  const add = useAction(
-    async () => {
-      const id = folder || (await talentApi.addFolder({ name }))._id;
-      return talentApi.addToFolder(id, ids);
-    },
-    { success: 'Added to folder', invalidate: ['folders'], onSuccess: onClose },
-  );
-  return (
-    <Modal open onClose={onClose} title="Add to folder" size="sm" footer={<Button size="sm" variant="primaryBlue" disabled={!folder && !name.trim()} loading={add.isPending} onClick={() => add.mutate()}>Add</Button>}>
-      <div className="space-y-4">
-        <SelectField label="Folder" options={(data?.folders || []).map((f) => ({ value: f._id, label: f.name }))} placeholder="New folder" value={folder} onChange={(e) => setFolder(e.target.value)} />
-        {!folder && <TextField label="New folder name" value={name} onChange={(e) => setName(e.target.value)} />}
-      </div>
-    </Modal>
-  );
-};
-
 const CandidateCard = ({ c, selected, onToggle }) => (
   <article className="surface p-4 transition-shadow hover:shadow-[var(--shadow-hover)]">
     <div className="flex gap-3">
@@ -518,7 +498,7 @@ const Candidates = () => {
         />
       )}
       {filing && (
-        <FolderModal
+        <AddToFolderModal
           ids={selected}
           onClose={() => {
             setFiling(false);
@@ -681,7 +661,7 @@ export const CandidateResumeDetail = () => {
         </aside>
       </div>
       {inviting && <InviteModal ids={[id]} onClose={() => setInviting(false)} onDone={() => setInviting(false)} />}
-      {filing && <FolderModal ids={[id]} onClose={() => setFiling(false)} />}
+      {filing && <AddToFolderModal ids={[id]} onClose={() => setFiling(false)} />}
       {reporting && <ReportModal targetType="candidate" targetId={id} onClose={() => setReporting(false)} />}
     </div>
   );

@@ -94,6 +94,7 @@ export const adminNav = [
       { label: 'Plans', to: '/admin/plans', icon: 'sell' },
       { label: 'Coupons', to: '/admin/coupons', icon: 'confirmation_number' },
       { label: 'Orders', to: '/admin/orders', icon: 'receipt_long' },
+      { label: 'Wallet', to: '/admin/wallet', icon: 'account_balance_wallet' },
       { label: 'Subscriptions', to: '/admin/subscriptions', icon: 'autorenew' },
       { label: 'Sales Leads', to: '/admin/sales-leads', icon: 'trending_up' },
     ],

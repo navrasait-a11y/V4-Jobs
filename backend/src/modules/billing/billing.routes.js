@@ -63,6 +63,7 @@ router.get(
 );
 router.get('/invoices/:id', validate({ params: idParam, query: Joi.object({ format: Joi.string().valid('json', 'html', 'pdf') }) }), c.invoice);
 router.get('/wallet', validate({ query: Joi.object(pagination) }), c.wallet);
+router.post('/wallet/topup', validate({ body: Joi.object({ amount: Joi.number().positive().precision(2).max(1000000).required() }) }), c.walletTopup);
 
 /* ------------------------------------------------------------------ admin */
 
@@ -263,6 +264,13 @@ adminRouter.patch(
       audit(req, { action: 'order.mark_paid', entity: 'Order', entityId: req.params.id });
       return ok(res, order, 'Order marked paid');
     }
+    if (req.body.status === 'refunded') {
+      const refunded = await s.markRefunded(req.params.id, { note: req.body.note, by: req.user._id });
+      if (!refunded) throw ApiError.notFound('Order not found');
+      if (refunded.status !== 'refunded') throw ApiError.badRequest('Only a paid order can be refunded', undefined, 'ORDER_NOT_PAID');
+      audit(req, { action: 'order.refunded', entity: 'Order', entityId: req.params.id, changes: req.body });
+      return ok(res, refunded, 'Order marked refunded');
+    }
     const order = await Order.findByIdAndUpdate(req.params.id, { $set: { status: req.body.status, notes: req.body.note } }, { new: true });
     audit(req, { action: `order.${req.body.status}`, entity: 'Order', entityId: req.params.id, changes: req.body });
     return ok(res, order, 'Updated');
@@ -321,11 +329,26 @@ adminRouter.post(
     return ok(res, wallet, 'Wallet updated');
   },
 );
-adminRouter.get('/wallet/transactions', validate({ query: Joi.object(pagination) }), async (req, res) => {
+const walletTxnQuery = Joi.object({
+  ...pagination,
+  ...timespan,
+  type: Joi.string().valid('credit', 'debit'),
+  reason: Joi.string().valid('topup', 'purchase', 'refund', 'referral_reward', 'admin_adjustment', 'auto_renew'),
+});
+adminRouter.get('/wallet/transactions', validate({ query: walletTxnQuery }), async (req, res) => {
   const p = parsePagination(req.query);
+  const f = { ...dateRangeFilter(req.query) };
+  for (const k of ['type', 'reason']) if (req.query[k]) f[k] = req.query[k];
   const [items, total] = await Promise.all([
-    WalletTransaction.find().sort(p.sort).skip(p.skip).limit(p.limit).populate('wallet', 'ownerKey').lean(),
-    WalletTransaction.countDocuments(),
+    WalletTransaction.find(f)
+      .sort(p.sort)
+      .skip(p.skip)
+      .limit(p.limit)
+      .populate({ path: 'wallet', select: 'ownerKey balance organization user', populate: [{ path: 'organization', select: 'name uid' }, { path: 'user', select: 'fullName email uid' }] })
+      .populate('by', 'fullName')
+      .populate('order', 'orderNumber')
+      .lean(),
+    WalletTransaction.countDocuments(f),
   ]);
   return paginated(res, { items, total, page: p.page, limit: p.limit });
 });

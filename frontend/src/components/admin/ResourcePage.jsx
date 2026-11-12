@@ -1,16 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { clsx } from 'clsx';
 import Button from '../ui/Button';
 import { DataTable, PageHeader, Pagination, SearchInput, SimpleSelect, Tabs } from '../ui/data';
 import { ConfirmDialog, Drawer, EmptyState, Icon, Modal } from '../ui/feedback';
 import { CheckboxField, ChoiceChips, Field, SelectField, TextAreaField, TextField } from '../ui/form';
 import { MediaField } from './AdminActions';
 import RichTextEditor from './RichTextEditor';
+import TimeRange, { rangeParams } from './TimeRange';
 import { useAction, useDocumentTitle, useLookups, useUrlFilters } from '../../hooks/useData';
 import useDebounce from '../../hooks/useDebounce';
 import { adminApi } from '../../services';
-import { TIMESPAN_OPTIONS, toInputDate, toInputDateTime } from '../../utils/format';
+import { toInputDate, toInputDateTime } from '../../utils/format';
 
 const get = (obj, path) => path.split('.').reduce((o, k) => o?.[k], obj);
 const setPath = (obj, path, value) => {
@@ -223,8 +225,42 @@ export const RecordForm = ({ title, fields, row, onSubmit, onClose, invalidate, 
  * Config-driven admin list. config: { title, subtitle, path, columns, tabs, filters, search, timespan,
  * bulk: { path, actions }, exportPath, importPath, createFields, editFields, rowActions(row, helpers), params }
  */
+/**
+ * Count tiles above a list ("All 120 · Active 96 · Pending 4 ..."). Clicking one filters the list.
+ * stats: { path, pick(data, filters), tiles: [{ key, label, filter }] } - `filter` is the list
+ * filter the tile stands for; the tile with an empty filter is "All".
+ */
+const StatTiles = ({ stats, filters, setFilters }) => {
+  const range = rangeParams(filters);
+  const query = useQuery({ queryKey: ['admin', 'stats', stats.path, range], queryFn: () => adminApi.get(stats.path, range), placeholderData: keepPreviousData });
+  const data = stats.pick ? stats.pick(query.data || {}, filters) : query.data;
+  const keys = [...new Set(stats.tiles.flatMap((t) => Object.keys(t.filter || {})))];
+  const isActive = (tile) => keys.every((k) => (filters[k] || '') === (tile.filter?.[k] || ''));
+  return (
+    <div className="no-scrollbar -mx-1 mb-4 flex gap-2 overflow-x-auto px-1 pb-1" role="tablist" aria-label="Quick filters">
+      {stats.tiles.map((tile) => {
+        const active = isActive(tile);
+        const count = get(data || {}, tile.key);
+        return (
+          <button
+            key={tile.key}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => setFilters({ ...Object.fromEntries(keys.map((k) => [k, ''])), ...tile.filter })}
+            className={clsx('shrink-0 rounded-xl border px-3.5 py-2 text-left transition-colors', active ? 'border-brand-blue bg-brand-blue-tint' : 'border-brand-border bg-white hover:border-brand-blue')}
+          >
+            <span className={clsx('block text-lg font-bold leading-6', active ? 'text-brand-blue' : 'text-brand-dark')}>{count === undefined ? '–' : Number(count).toLocaleString('en-IN')}</span>
+            <span className="block whitespace-nowrap text-xs font-medium text-brand-gray">{tile.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+};
+
 const ResourcePage = ({ config }) => {
-  const { title, subtitle, path: rawPath, columns, tabs, filters: filterDefs = [], search = true, timespan = true, bulk, exportPath, importPath, importModes, createFields, createLink, editFields, rowActions, onRowClick, rowLink, params: fixed, remove, headerActions } = config;
+  const { title, subtitle, path: rawPath, columns, tabs, stats, filters: filterDefs = [], search = true, searchPlaceholder = 'Search by name, e-mail, mobile or ID', timespan = true, bulk, exportPath, downloads = [], importPath, importModes, createFields, createLink, editFields, editLabel = 'Edit', rowActions, onRowClick, rowLink, params: fixed, remove, headerActions } = config;
   const navigate = useNavigate();
   useDocumentTitle(title);
   const [path] = rawPath.split('?');
@@ -248,9 +284,11 @@ const ResourcePage = ({ config }) => {
     if (debounced !== (filters.q || '')) setFilters({ q: debounced });
   }, [debounced]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const { create: _create, ...listFilters } = filters;
+  const { create: _create, timespan: _t, from: _f, to: _to, ...plainFilters } = filters;
+  // Custom dates travel in the URL as yyyy-mm-dd and go to the API as whole-day ISO bounds.
+  const listFilters = { ...plainFilters, ...rangeParams(filters) };
   const params = { limit: 20, ...fixed, ...listFilters };
-  const activeFilters = Object.entries(listFilters).filter(([k, v]) => !['page', 'limit', 'sort'].includes(k) && v !== '' && v !== undefined).length;
+  const activeFilters = Object.entries({ ...plainFilters, timespan: filters.timespan }).filter(([k, v]) => !['page', 'limit', 'sort'].includes(k) && v !== '' && v !== undefined).length;
   const query = useQuery({ queryKey: [...key, params], queryFn: () => adminApi.list(path, params), placeholderData: keepPreviousData });
   const inv = { invalidate: ['admin'] };
   const runBulk = useAction(({ action, value }) => adminApi.post(bulk.path, { ids: selected, action, value }), {
@@ -263,9 +301,17 @@ const ResourcePage = ({ config }) => {
   });
   const del = useAction((id) => adminApi.del(`${path}/${id}`), { ...inv, success: 'Deleted', onSuccess: () => setConfirm(null) });
   const doExport = useAction(() => {
-    const { page: _p, ...rest } = filters;
+    const { page: _p, limit: _l, ...rest } = listFilters;
     return adminApi.download(exportPath, rest, `${title.toLowerCase()}.xlsx`);
   }, { success: 'Export downloaded' });
+  // Extra downloads (resume ZIPs ...): `selection` ones post the ticked rows, the rest follow the list filters.
+  const doDownload = useAction(
+    (d) => {
+      const { page: _p, limit: _l, ...rest } = listFilters;
+      return d.selection ? adminApi.downloadPost(d.path, { ids: selected }, d.name) : adminApi.download(d.path, { ...fixed, ...rest }, d.name);
+    },
+    { success: 'Download started' },
+  );
   const [importing, setImporting] = useState(null); // modes: { file, mode, check }
   const doImport = useAction((file) => adminApi.upload(importPath, { file }), { ...inv, success: (r) => `Import finished${r?.created !== undefined ? `: ${r.created} added, ${r.updated || 0} updated, ${r.skipped || 0} skipped` : ''}` });
   const helpers = { edit: setEditing, confirm: setConfirm, refresh: () => query.refetch() };
@@ -303,6 +349,13 @@ const ResourcePage = ({ config }) => {
                 Export
               </Button>
             )}
+            {downloads
+              .filter((d) => !d.selection)
+              .map((d) => (
+                <Button key={d.path} size="sm" variant="outline" leftIcon={<Icon name={d.icon || 'folder_zip'} size={16} />} loading={doDownload.isPending && doDownload.variables === d} onClick={() => doDownload.mutate(d)}>
+                  {d.label}
+                </Button>
+              ))}
             {(createFields || createLink) && (
               <Button size="sm" variant="primary" leftIcon={<Icon name="add" size={16} />} onClick={() => (createLink ? navigate(createLink) : setEditing({}))}>
                 Add new
@@ -311,20 +364,21 @@ const ResourcePage = ({ config }) => {
           </>
         }
       />
+      {stats && <StatTiles stats={stats} filters={filters} setFilters={setFilters} />}
       {tabs && <Tabs className="mb-4" value={filters[tabs.key] || ''} onChange={(v) => setFilters({ [tabs.key]: v })} tabs={tabs.options} />}
       {(search || filterDefs.length > 0 || timespan) && (
         <div className="surface mb-4 flex flex-wrap items-center gap-2 p-3">
-          {search && <SearchInput className="min-w-[220px] flex-1" value={q} onChange={setQ} placeholder="Search by name, e-mail, mobile or ID" />}
+          {search && <SearchInput className="min-w-[220px] flex-1" value={q} onChange={setQ} placeholder={searchPlaceholder} />}
           {filterDefs.map((f) => (
             <SimpleSelect key={f.key} ariaLabel={f.label} value={filters[f.key]} onChange={(v) => setFilters({ [f.key]: v })} placeholder={f.label} options={f.options} className={filters[f.key] ? 'ring-1 ring-brand-blue rounded-lg' : ''} />
           ))}
-          {timespan && <SimpleSelect ariaLabel="Time range" value={filters.timespan} onChange={(v) => setFilters({ timespan: v })} placeholder="All time" options={TIMESPAN_OPTIONS} />}
+          {timespan && <TimeRange value={filters} onChange={(r) => setFilters(r)} />}
           {activeFilters > 0 && (
             <button
               type="button"
               onClick={() => {
                 setQ('');
-                setFilters(Object.fromEntries(Object.keys(listFilters).map((k) => [k, ''])));
+                setFilters(Object.fromEntries([...Object.keys(plainFilters), 'timespan', 'from', 'to'].map((k) => [k, ''])));
               }}
               className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-brand-blue hover:bg-brand-blue-tint"
             >
@@ -344,6 +398,14 @@ const ResourcePage = ({ config }) => {
               {a.label}
             </Button>
           ))}
+          {downloads
+            .filter((d) => d.selection)
+            .map((d) => (
+              <Button key={d.path} size="sm" variant="outline" leftIcon={<Icon name={d.icon || 'folder_zip'} size={16} />} disabled={selected.length > (d.max || 500)} loading={doDownload.isPending && doDownload.variables === d} onClick={() => doDownload.mutate(d)}>
+                {d.label}
+              </Button>
+            ))}
+          {bulk.custom?.({ selected, clear: () => setSelected([]) })}
           {(bulk.pickers || []).map((p) => (
             <BulkPicker key={p.action} picker={p} disabled={runBulk.isPending} onPick={(value) => runBulk.mutate({ action: p.action, value })} />
           ))}
@@ -361,11 +423,11 @@ const ResourcePage = ({ config }) => {
         actions={
           rowActions || editFields || remove
             ? (row) => (
-                <span className="inline-flex flex-wrap justify-end gap-1">
+                <span className="inline-flex flex-wrap items-center justify-end gap-1 md:flex-nowrap">
                   {rowActions?.(row, helpers)}
                   {editFields && (
                     <Button size="sm" variant="ghost" onClick={() => setEditing(row)}>
-                      Edit
+                      {editLabel}
                     </Button>
                   )}
                   {remove && (

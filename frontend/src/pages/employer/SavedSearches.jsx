@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import Button from '../../components/ui/Button';
-import { PageHeader, Section, SimpleSelect, StatTile, Tabs } from '../../components/ui/data';
-import { CardSkeleton, Drawer, EmptyState, ErrorState, Icon, Modal } from '../../components/ui/feedback';
-import { TextField } from '../../components/ui/form';
+import { PageHeader, SimpleSelect, Tabs } from '../../components/ui/data';
+import { CardSkeleton, EmptyState, ErrorState, Icon, Modal } from '../../components/ui/feedback';
+import { CheckboxField, TextField } from '../../components/ui/form';
 import { useAction, useDocumentTitle } from '../../hooks/useData';
-import { talentApi } from '../../services';
-import { timeAgo, titleCase } from '../../utils/format';
+import { orgApi, talentApi } from '../../services';
+import useAuth from '../../hooks/useAuth';
+import { FoldersTab } from './Folders';
+import { timeAgo } from '../../utils/format';
 
 /** PRD "Searched / Folders filters": Today, Yesterday, In last 2 / 5 / 7 days, Custom date range. */
 const SPANS = [
@@ -35,10 +37,47 @@ const SpanFilter = ({ value, onChange }) => (
   </div>
 );
 
+/** Share a saved search or a folder with people of the same employer account. */
+const ShareModal = ({ item, kind, onClose }) => {
+  const { user } = useAuth();
+  const [picked, setPicked] = useState(() => (item.sharedWith || []).map(String));
+  const team = useQuery({ queryKey: ['team', ''], queryFn: () => orgApi.team({}) });
+  const members = (team.data?.data || []).filter((m) => String(m._id) !== String(user?._id) && m.status === 'active');
+  const save = useAction(() => (kind === 'folder' ? talentApi.updateFolder(item._id, { sharedWith: picked }) : talentApi.updateSearch(item._id, { sharedWith: picked })), {
+    success: picked.length ? `Shared with ${picked.length} team member${picked.length === 1 ? '' : 's'}` : 'Sharing removed',
+    invalidate: [kind === 'folder' ? 'folders' : 'saved-searches'],
+    onSuccess: onClose,
+  });
+  const toggle = (id) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+  return (
+    <Modal open onClose={onClose} title={`Share ${kind === 'folder' ? 'folder' : 'search'}`} subtitle={item.name} size="sm" footer={<Button size="sm" variant="primaryBlue" loading={save.isPending} disabled={team.isPending} onClick={() => save.mutate()}>Save</Button>}>
+      {team.isPending && <CardSkeleton count={1} />}
+      {team.isError && <ErrorState error={team.error} onRetry={team.refetch} />}
+      {team.data && !members.length && <EmptyState icon="group" title="No other team members yet" description="Add users from the Team page, then share with them here." />}
+      <ul className="max-h-72 divide-y divide-brand-border overflow-y-auto">
+        {members.map((m) => (
+          <li key={m._id} className="py-2">
+            <CheckboxField label={m.fullName} description={m.employer?.designation || m.email} checked={picked.includes(String(m._id))} onChange={() => toggle(String(m._id))} />
+          </li>
+        ))}
+      </ul>
+    </Modal>
+  );
+};
+
+const SharedBadge = ({ count }) =>
+  count ? (
+    <span className="inline-flex items-center gap-1 rounded-full bg-brand-blue-tint px-2 py-0.5 text-[11px] font-semibold text-brand-blue">
+      <Icon name="group" size={12} /> {count}
+    </span>
+  ) : null;
+
 const Searches = ({ span }) => {
   const [tab, setTab] = useState('mine');
   const query = useQuery({ queryKey: ['saved-searches', tab, span], queryFn: () => talentApi.searches({ tab, limit: 100, ...span }) });
   const remove = useAction(talentApi.removeSearch, { success: 'Search deleted', invalidate: ['saved-searches'] });
+  const [sharing, setSharing] = useState(null);
+  const mine = tab === 'mine';
   return (
     <>
       <Tabs
@@ -57,118 +96,46 @@ const Searches = ({ span }) => {
         {query.data?.data.map((s) => (
           <div key={s._id} className="flex items-center justify-between gap-2 surface p-4">
             <div className="min-w-0">
-              <p className="truncate font-semibold text-brand-dark">{s.name}</p>
-              <p className="text-xs text-brand-gray-muted">Updated {timeAgo(s.updatedAt)}</p>
+              <p className="flex items-center gap-2 truncate font-semibold text-brand-dark">
+                <span className="truncate">{s.name}</span> {mine && <SharedBadge count={s.sharedWith?.length} />}
+              </p>
+              <p className="text-xs text-brand-gray-muted">
+                {!mine && s.owner?.fullName ? `Shared by ${s.owner.fullName} · ` : ''}Updated {timeAgo(s.updatedAt)}
+              </p>
             </div>
             <div className="flex shrink-0 gap-1">
               <Button asChild size="sm" variant="outline">
                 <Link to={`/employer/candidates?search=${s._id}`}>Run</Link>
               </Button>
-              <Button size="sm" variant="dangerGhost" onClick={() => remove.mutate(s._id)}>
-                Delete
-              </Button>
+              {mine && (
+                <>
+                  <Button size="sm" variant="ghost" onClick={() => setSharing(s)}>
+                    Share
+                  </Button>
+                  <Button size="sm" variant="dangerGhost" onClick={() => remove.mutate(s._id)}>
+                    Delete
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         ))}
       </div>
+      {sharing && <ShareModal item={sharing} kind="search" onClose={() => setSharing(null)} />}
     </>
-  );
-};
-
-const FolderDrawer = ({ folder, onClose }) => {
-  const query = useQuery({
-    queryKey: ['folder', folder.key || folder._id],
-    queryFn: () => (folder.key ? talentApi.systemFolder(folder.key, { limit: 100 }) : talentApi.folder(folder._id, { limit: 100 })),
-  });
-  const removeFrom = useAction((id) => talentApi.removeFromFolder(folder._id, [id]), { invalidate: ['folder', 'folders'] });
-  return (
-    <Drawer open onClose={onClose} title={folder.name}>
-      {query.isPending && <CardSkeleton count={2} />}
-      {query.data && !query.data.data.length && <p className="text-sm text-brand-gray">No candidates here.</p>}
-      <ul className="divide-y divide-brand-border">
-        {query.data?.data.map((c) => {
-          const id = c.candidateId || c._id;
-          return (
-            <li key={id} className="flex items-center justify-between gap-2 py-2.5">
-              <Link to={`/employer/candidates/${id}`} className="truncate text-sm font-medium text-brand-dark hover:text-brand-blue">
-                {c.name || c.fullName}
-              </Link>
-              {!folder.key && (
-                <button aria-label="Remove from folder" onClick={() => removeFrom.mutate(id)} className="text-brand-gray-muted hover:text-brand-red">
-                  <Icon name="close" size={16} />
-                </button>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-    </Drawer>
-  );
-};
-
-const Folders = ({ span }) => {
-  const query = useQuery({ queryKey: ['folders', span], queryFn: () => talentApi.folders({ tab: 'all', ...span }) });
-  const [creating, setCreating] = useState(false);
-  const [name, setName] = useState('');
-  const [open, setOpen] = useState(null);
-  const create = useAction(() => talentApi.addFolder({ name }), {
-    success: 'Folder created',
-    invalidate: ['folders'],
-    onSuccess: () => {
-      setCreating(false);
-      setName('');
-    },
-  });
-  const remove = useAction(talentApi.removeFolder, { success: 'Folder deleted', invalidate: ['folders'] });
-  if (query.isError) return <ErrorState error={query.error} onRetry={query.refetch} />;
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        {Object.entries(query.data?.system || {}).map(([key, count]) => (
-          <button key={key} onClick={() => setOpen({ key, name: titleCase(key) })} className="text-left">
-            <StatTile icon="folder_special" label={titleCase(key)} value={count} />
-          </button>
-        ))}
-      </div>
-      <Section
-        title="My folders"
-        actions={
-          <Button size="sm" variant="outline" onClick={() => setCreating(true)}>
-            New folder
-          </Button>
-        }
-      >
-        {!query.data?.folders?.length && <p className="text-sm text-brand-gray">No folders yet.</p>}
-        <ul className="divide-y divide-brand-border">
-          {query.data?.folders?.map((f) => (
-            <li key={f._id} className="flex items-center justify-between gap-2 py-2.5">
-              <button onClick={() => setOpen(f)} className="flex items-center gap-2 text-sm font-medium text-brand-dark hover:text-brand-blue">
-                <Icon name="folder" size={18} /> {f.name} <span className="text-xs text-brand-gray-muted">({f.count || 0})</span>
-              </button>
-              <Button size="sm" variant="dangerGhost" onClick={() => remove.mutate(f._id)}>
-                Delete
-              </Button>
-            </li>
-          ))}
-        </ul>
-      </Section>
-      {open && <FolderDrawer folder={open} onClose={() => setOpen(null)} />}
-      <Modal open={creating} onClose={() => setCreating(false)} title="New folder" size="sm" footer={<Button size="sm" variant="primaryBlue" disabled={!name.trim()} loading={create.isPending} onClick={() => create.mutate()}>Create</Button>}>
-        <TextField label="Folder name" value={name} onChange={(e) => setName(e.target.value)} />
-      </Modal>
-    </div>
   );
 };
 
 const SavedSearches = () => {
   useDocumentTitle('Saved searches');
-  const [params] = useSearchParams();
-  const [tab, setTab] = useState(params.get('tab') === 'folders' ? 'folders' : 'searches');
+  const [params, setParams] = useSearchParams();
+  const tab = params.get('tab') === 'folders' ? 'folders' : 'searches';
+  const setTab = (value) => setParams(value === 'folders' ? { tab: 'folders' } : {}, { replace: true });
   const [range, setRange] = useState({ timespan: '', from: '', to: '' });
   const span = toSpan(range);
   return (
     <div>
-      <PageHeader title="Saved Searches & Folders" />
+      <PageHeader title="Saved Searches & Folders" subtitle="Searches you run often and the candidates you have filed, private or shared with your team" />
       <Tabs
         className="mb-4"
         value={tab}
@@ -179,7 +146,7 @@ const SavedSearches = () => {
         ]}
       />
       <SpanFilter value={range} onChange={setRange} />
-      {tab === 'searches' ? <Searches span={span} /> : <Folders span={span} />}
+      {tab === 'searches' ? <Searches span={span} /> : <FoldersTab span={span} />}
     </div>
   );
 };

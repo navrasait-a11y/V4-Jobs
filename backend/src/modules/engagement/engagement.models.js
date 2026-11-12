@@ -74,10 +74,16 @@ const folderSchema = new Schema(
         _id: false,
       },
     ],
+    // private = only the owner, team = everyone on the employer account, selected = the people in sharedWith
+    visibility: { type: String, enum: ['private', 'team', 'selected'] },
     sharedWith: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    // what people it is shared with may do: view = open only, edit = also add and remove candidates
+    sharedAccess: { type: String, enum: ['view', 'edit'], default: 'view' },
   },
   { timestamps: true },
 );
+folderSchema.index({ organization: 1, visibility: 1 });
+folderSchema.index({ organization: 1, sharedWith: 1 });
 folderSchema.index({ organization: 1, owner: 1, name: 1 }, { unique: true });
 folderSchema.index({ 'candidates.candidate': 1 });
 
