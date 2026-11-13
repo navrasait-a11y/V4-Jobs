@@ -53,7 +53,8 @@ const messageLogSchema = new Schema(
     user: { type: Schema.Types.ObjectId, ref: 'User' },
     template: String,
     body: String,
-    status: { type: String, enum: ['queued', 'sent', 'failed'], default: 'queued' },
+    status: { type: String, enum: ['queued', 'sent', 'failed', 'skipped'], default: 'queued' },
+    route: String, // sms: otp_api | dlt
     error: String,
     providerId: String,
   },

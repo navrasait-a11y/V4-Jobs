@@ -2,6 +2,8 @@ import { Router } from 'express';
 import mongoose from 'mongoose';
 import { insights as searchInsights } from '../search/searchStats.service.js';
 import ApiError from '../../shared/errors/ApiError.js';
+import { riskSignals } from './admin.risk.service.js';
+import config from '../../config/env.js';
 import Joi from 'joi';
 import validate from '../../shared/middleware/validate.js';
 import { authenticate, authorize, requireAdminPermission } from '../../shared/middleware/auth.js';
@@ -106,6 +108,13 @@ const trackingBody = Joi.object({
 /* ============================================================ dashboard */
 
 r.get('/system/health', requireAdminPermission('dashboard.view'), async (_req, res) => ok(res, await systemHealth()));
+r.get('/risk-signals', requireAdminPermission('reports.manage'), async (_req, res) => ok(res, await riskSignals()));
+// Count only, for the overview card: cached for 5 minutes so a busy dashboard does not repeat the scan.
+let riskCache = { at: 0, total: 0 };
+r.get('/risk-signals/count', requireAdminPermission('dashboard.view'), async (_req, res) => {
+  if (Date.now() - riskCache.at > 5 * 60 * 1000) riskCache = { at: Date.now(), total: (await riskSignals()).total };
+  return ok(res, { total: riskCache.total });
+});
 r.get(
   '/search/insights',
   requireAdminPermission('dashboard.view'),
@@ -757,9 +766,12 @@ r.post(
       message: 'Test SMS',
     };
     try {
-      await deliverSms({ to: String(req.body.mobile).replace(/\D/g, '').slice(-10), template: req.body.template, vars, user: req.user._id });
-      return ok(res, { delivered: true }, 'Test SMS sent');
+      const log = await deliverSms({ to: String(req.body.mobile).replace(/\D/g, '').slice(-10), template: req.body.template, vars, user: req.user._id });
+      if (log?.status === 'skipped') throw ApiError.badRequest(log.error, undefined, 'SMS_NOT_SET_UP');
+      const via = log?.route === 'otp_api' ? 'apitxt Unified OTP API' : log?.route === 'dlt' ? 'DLT template' : config.sms.provider;
+      return ok(res, { delivered: true, route: log?.route, providerId: log?.providerId }, `Test SMS accepted by ${via}${log?.providerId ? ` (request ${log.providerId})` : ''}`);
     } catch (err) {
+      if (err instanceof ApiError) throw err;
       throw ApiError.badRequest(`SMS provider error: ${err.message}`, undefined, 'PROVIDER_ERROR');
     }
   },

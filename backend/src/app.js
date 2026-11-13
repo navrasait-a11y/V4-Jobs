@@ -5,6 +5,7 @@ import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import pinoHttp from 'pino-http';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import mongoose from 'mongoose';
 import config from './config/env.js';
 import logger from './config/logger.js';
@@ -16,6 +17,8 @@ import { maintenanceGate } from './shared/middleware/maintenance.js';
 import { storageRoot } from './shared/services/storage.service.js';
 import routes from './routes.js';
 import { paymentWebhook } from './modules/billing/billing.controller.js';
+
+const brandDir = fileURLToPath(new URL('./shared/assets/', import.meta.url));
 
 export function createApp() {
   const app = express();
@@ -70,6 +73,13 @@ export function createApp() {
   app.get('/ready', (_req, res) => {
     const db = mongoose.connection.readyState === 1;
     res.status(db ? 200 : 503).json({ status: db ? 'ready' : 'not_ready', db, redis: redisStatus() }); // Redis is optional, so it never fails readiness
+  });
+
+  // Brand logo for e-mails and invoices: the same file the website shows, served by the API so mail
+  // clients always get the right image from a public address (https://<api>/brand/logo.png).
+  app.get('/brand/logo.png', (_req, res) => {
+    res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+    res.sendFile(path.join(brandDir, 'freejobwala-logo.png'));
   });
 
   // Local storage driver: only the public/ prefix is served statically. Private files use signed URLs.

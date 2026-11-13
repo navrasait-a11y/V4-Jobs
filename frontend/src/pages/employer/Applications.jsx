@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import AddToCalendar from '../../components/common/AddToCalendar';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import { clsx } from 'clsx';
 import Button from '../../components/ui/Button';
 import { Avatar, Badge, DataTable, DetailRow, PageHeader, Pagination, SearchInput, Section, SimpleSelect, StatusBadge, Tabs } from '../../components/ui/data';
@@ -359,12 +360,29 @@ export const ATS = () => {
   const jobs = useQuery({ queryKey: ['employer-jobs', 'options'], queryFn: () => employerJobApi.list({ limit: 200, status: 'active' }) });
   const params = { limit: 200, sort: '-createdAt', ...(filters.job ? { job: filters.job } : {}) };
   const query = useQuery({ queryKey: ['responses', 'ats', params], queryFn: () => responseApi.list(params) });
-  const move = useAction(({ id, stage }) => responseApi.update(id, { stage }), { success: 'Candidate moved', invalidate: inv });
+  const client = useQueryClient();
+  const key = ['responses', 'ats', params];
+  // Optimistic: the card moves at once and goes back if the server refuses the change.
+  const move = useMutation({
+    mutationFn: ({ id, stage }) => responseApi.update(id, { stage }),
+    onMutate: async ({ id, stage }) => {
+      await client.cancelQueries({ queryKey: key });
+      const before = client.getQueryData(key);
+      client.setQueryData(key, (old) => (old ? { ...old, data: old.data.map((r) => (r._id === id ? { ...r, stage } : r)) } : old));
+      return { before };
+    },
+    onError: (e, _v, ctx) => {
+      client.setQueryData(key, ctx?.before);
+      toast.error(e.message);
+    },
+    onSuccess: (_d, { stage }) => toast.success(`Moved to ${STAGE_LABELS[stage]}`),
+    onSettled: () => inv.forEach((k) => client.invalidateQueries({ queryKey: [k] })),
+  });
   if (query.isError) return <ErrorState error={query.error} onRetry={query.refetch} />;
   const rows = query.data?.data || [];
   return (
     <div>
-      <PageHeader title="ATS Pipeline" subtitle="Drag candidates between stages" actions={<SimpleSelect ariaLabel="Job" value={filters.job} onChange={(job) => setFilters({ job })} placeholder="All active jobs" className="max-w-[240px]" options={(jobs.data?.data || []).map((j) => ({ value: j._id, label: j.title }))} />} />
+      <PageHeader title="ATS Pipeline" subtitle="Drag a card to move a candidate, or use the stage menu on a phone" actions={<SimpleSelect ariaLabel="Job" value={filters.job} onChange={(job) => setFilters({ job })} placeholder="All active jobs" className="max-w-[240px]" options={(jobs.data?.data || []).map((j) => ({ value: j._id, label: j.title }))} />} />
       <div className="flex gap-3 overflow-x-auto pb-3">
         {STAGES.map((stage) => {
           const cards = rows.filter((r) => r.stage === stage);
@@ -388,12 +406,38 @@ export const ATS = () => {
                 <span className="rounded-full bg-brand-tint px-2 text-xs text-brand-gray">{cards.length}</span>
               </p>
               <div className="min-h-24 space-y-2">
+                {!cards.length && <p className="rounded-lg border border-dashed border-brand-border px-2 py-4 text-center text-xs text-brand-gray-muted">Drop a candidate here</p>}
                 {cards.map((a) => (
-                  <div key={a._id} draggable onDragStart={(e) => e.dataTransfer.setData('text/plain', a._id)} onClick={() => navigate(`/employer/applications/${a._id}`)} className="cursor-grab rounded-lg border border-brand-border bg-white p-2.5 shadow-sm hover:border-brand-blue/40">
-                    <p className="truncate text-sm font-medium text-brand-dark">{a.snapshot?.fullName}</p>
-                    <p className="truncate text-xs text-brand-gray-muted">{a.job?.title}</p>
+                  <div
+                    key={a._id}
+                    draggable
+                    onDragStart={(e) => e.dataTransfer.setData('text/plain', a._id)}
+                    onClick={() => navigate(`/employer/applications/${a._id}`)}
+                    onKeyDown={(e) => e.key === 'Enter' && navigate(`/employer/applications/${a._id}`)}
+                    role="button"
+                    tabIndex={0}
+                    className="group cursor-grab rounded-lg border border-brand-border bg-white p-2.5 shadow-sm transition-shadow hover:border-brand-blue/40 hover:shadow-md active:cursor-grabbing"
+                  >
+                    <div className="flex items-start gap-2">
+                      <Avatar name={a.snapshot?.fullName} size={32} />
+                      <div className="min-w-0 flex-1">
+                        <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-brand-dark">
+                          {!a.isViewed && <span className="h-2 w-2 shrink-0 rounded-full bg-brand-orange" title="Not opened yet" />}
+                          <span className="truncate">{a.snapshot?.fullName}</span>
+                        </p>
+                        <p className="truncate text-xs text-brand-gray-muted">{a.job?.title}</p>
+                      </div>
+                      {typeof a.matchScore === 'number' && (
+                        <span className={clsx('shrink-0 rounded-full px-1.5 py-0.5 text-[11px] font-bold', a.matchScore >= 75 ? 'bg-green-50 text-brand-green' : a.matchScore >= 45 ? 'bg-orange-50 text-brand-orange' : 'bg-brand-tint text-brand-gray')} title="Profile match">
+                          {a.matchScore}%
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1.5 text-[11px] text-brand-gray-muted">
+                      {[a.snapshot?.currentJobTitle, typeof a.snapshot?.totalExperienceMonths === 'number' ? monthsToExperience(a.snapshot.totalExperienceMonths) : '', timeAgo(a.createdAt)].filter(Boolean).join(' · ')}
+                    </p>
                     {/* touch devices have no drag and drop */}
-                    <select aria-label="Move to stage" value={stage} onClick={(e) => e.stopPropagation()} onChange={(e) => move.mutate({ id: a._id, stage: e.target.value })} className="field-control mt-1.5 h-8 w-full px-1 text-xs md:hidden">
+                    <select aria-label={`Move ${a.snapshot?.fullName || 'candidate'} to stage`} value={stage} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()} onChange={(e) => move.mutate({ id: a._id, stage: e.target.value })} className="field-control mt-1.5 h-8 w-full px-2 text-xs">
                       {STAGES.map((s) => (
                         <option key={s} value={s}>
                           {STAGE_LABELS[s]}

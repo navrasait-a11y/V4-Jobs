@@ -80,7 +80,15 @@ export function scoreMatch(candidate, job, weights) {
     weightSum += w;
   }
   const score = weightSum ? Math.round((total / weightSum) * 100) : 0;
-  return { score, breakdown: Object.fromEntries(Object.entries(parts).map(([k, v]) => [k, v === null ? null : Math.round(v * 100)])) };
+  // Which of the job's key skills the candidate has, so the job page can say what to add.
+  const own = set(candidate.keySkills?.concat(candidate.itSkills || [], candidate.preferences?.skills || []));
+  const jobSkills = [...new Map((job.keySkills || []).filter(Boolean).map((s) => [norm(s), s])).values()];
+  return {
+    score,
+    breakdown: Object.fromEntries(Object.entries(parts).map(([k, v]) => [k, v === null ? null : Math.round(v * 100)])),
+    matchedSkills: jobSkills.filter((s) => own.has(norm(s))),
+    missingSkills: jobSkills.filter((s) => !own.has(norm(s))).slice(0, 12),
+  };
 }
 
 export async function getWeights() {

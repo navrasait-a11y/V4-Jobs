@@ -40,19 +40,42 @@ export async function deliverEmail({ to, cc, subject, html, text, template, cate
  * `template` is a DLT template key (otp, interview, interview_reminder, generic, bulk) with `vars`.
  * Idempotent per MessageLog (retries never double-send an already sent SMS).
  */
+/** DLT SMS needs a registered header, entity id and the template's id. Without all three apitxt rejects it. */
+export const dltReady = (templateId) => Boolean(templateId && config.sms.apitxt.senderId && config.sms.apitxt.peId);
+
+/**
+ * Which apitxt route an OTP takes. The Unified OTP API (/api/sendOTP) needs only the auth key, so it
+ * is used unless DLT is chosen *and* fully set up - a half-finished DLT setup must never stop OTPs.
+ */
+export function otpRoute(resolvedTemplateId) {
+  const c = config.sms.apitxt;
+  return c.otpMode === 'dlt' && dltReady(resolvedTemplateId) ? 'dlt' : 'otp_api';
+}
+
 export async function deliverSms({ logId, to, template = 'generic', vars = {}, message, user }) {
   const log = logId ? await MessageLog.findById(logId) : await MessageLog.create({ channel: 'sms', to, user, template, status: 'queued' });
-  if (log?.status === 'sent') return;
+  if (log?.status === 'sent' || log?.status === 'skipped') return log;
   const { provider } = config.sms;
   try {
     const resolved = (await resolveSmsTemplate(template, vars)) || { templateId: '', message: message || '' };
     const text = resolved.message || message || '';
-    if (log) Object.assign(log, { body: text, template });
+    if (log) Object.assign(log, { body: template === 'otp' && vars.otp ? text.split(String(vars.otp)).join('******') : text, template });
     let providerId;
 
     if (provider === 'apitxt') {
-      if (template === 'otp' && config.sms.apitxt.otpMode === 'otp_api') ({ providerId } = await sendApitxtOtp({ to, otp: vars.otp }));
-      else ({ providerId } = await sendApitxtSms({ to, message: text, templateId: resolved.templateId }));
+      if (template === 'otp') {
+        const route = otpRoute(resolved.templateId);
+        ({ providerId } = route === 'dlt' ? await sendApitxtSms({ to, message: text, templateId: resolved.templateId }) : await sendApitxtOtp({ to, otp: vars.otp }));
+        if (log) log.route = route;
+      } else if (!dltReady(resolved.templateId)) {
+        // Alerts, interview and bulk SMS need a DLT-approved template. Until it is set up they are
+        // recorded as skipped (not failed): retrying cannot help and the user still gets e-mail / in-app.
+        if (log) Object.assign(log, { status: 'skipped', error: 'DLT template not set up for this SMS type (Admin > Settings > Integrations)' });
+        await log?.save();
+        return log;
+      } else {
+        ({ providerId } = await sendApitxtSms({ to, message: text, templateId: resolved.templateId }));
+      }
     } else {
       logger.info({ to, template, text }, '[sms:console]');
     }
@@ -63,6 +86,7 @@ export async function deliverSms({ logId, to, template = 'generic', vars = {}, m
     throw err;
   }
   await log?.save();
+  return log;
 }
 
 /* ---------------------------------------------------------------- WhatsApp */

@@ -35,6 +35,21 @@ export const Applications = () => {
     { key: 'location', header: 'Location', render: (a) => formatLocations(a.job) },
     { key: 'date', header: 'Applied', render: (a) => formatDate(a.createdAt) },
     { key: 'stage', header: 'Status', render: (a) => <StatusBadge status={a.stage} label={STAGE_LABELS[a.stage]} /> },
+    {
+      key: 'viewed',
+      header: 'Recruiter',
+      // Naukri-style signal: did anyone at the company open this application yet?
+      render: (a) =>
+        a.isViewed ? (
+          <span className="inline-flex items-center gap-1 text-xs font-medium text-brand-green" title={a.viewedAt ? `Viewed on ${formatDateTime(a.viewedAt)}` : undefined}>
+            <Icon name="visibility" size={15} /> Viewed{a.viewedAt ? ` ${formatDate(a.viewedAt)}` : ''}
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 text-xs text-brand-gray-muted">
+            <Icon name="schedule" size={15} /> Not viewed yet
+          </span>
+        ),
+    },
   ];
   return (
     <div>

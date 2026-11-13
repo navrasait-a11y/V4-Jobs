@@ -168,14 +168,51 @@ test('APITXT: business error and missing template are permanent failures', async
     (err) => err.retryable === false && /DLT/.test(err.message),
   );
   calls.length = 0;
-  await assert.rejects(
-    deliverSms({ to: '9876522222', template: 'interview', vars: { jobTitle: 'Dev' } }),
-    (err) => err.retryable === false && /template_id missing/.test(err.message),
-  );
+  const skipped = await deliverSms({ to: '9876522222', template: 'interview', vars: { jobTitle: 'Dev' } });
   assert.equal(calls.length, 0, 'nothing sent without an approved template');
-  assert.equal((await MessageLog.findOne({ to: '9876522222' })).status, 'failed');
+  assert.equal(skipped.status, 'skipped', 'not a failure: retrying cannot help until DLT is set up');
+  assert.match(skipped.error, /DLT template not set up/);
   nextResponse = { status: 502, body: 'Bad gateway' };
   await assert.rejects(deliverSms({ to: '9876533333', template: 'otp', vars: { otp: '1', minutes: 5 } }), (err) => err.retryable === true);
+});
+
+test('APITXT: OTP falls back to the Unified OTP API when DLT is chosen but not set up', async () => {
+  const config = (await import('../src/config/env.js')).default;
+  const { deliverSms } = await import('../src/shared/services/channels.js');
+  const c = config.sms.apitxt;
+  const saved = { senderId: c.senderId, peId: c.peId, otp: c.templates.otp };
+  Object.assign(c, { senderId: '', peId: '' });
+  c.templates.otp = '';
+  nextResponse = { status: 200, body: { status: 'success', message: 'OTP sent', data: { request_id: 'SMS-OTP-9' } } };
+  calls.length = 0;
+  const log = await deliverSms({ to: '9876544444', template: 'otp', vars: { otp: '731905', minutes: 5 } });
+  assert.equal(calls[0].url, '/api/sendOTP', 'mode=dlt with no template, sender or PE id must not block OTPs');
+  assert.equal(calls[0].body.otp, '731905');
+  assert.deepEqual([log.status, log.route], ['sent', 'otp_api']);
+  assert.ok(!log.body.includes('731905'), 'the OTP itself is not stored in the log');
+  Object.assign(c, { senderId: saved.senderId, peId: saved.peId });
+  c.templates.otp = saved.otp;
+});
+
+test('APITXT: a 200 reply that says the OTP was not sent is a failure', async () => {
+  const { deliverSms } = await import('../src/shared/services/channels.js');
+  const config = (await import('../src/config/env.js')).default;
+  config.sms.apitxt.otpMode = 'otp_api';
+  nextResponse = { status: 200, body: { status: 'warning', message: 'OTP not sent: insufficient balance' } };
+  await assert.rejects(deliverSms({ to: '9876566666', template: 'otp', vars: { otp: '1', minutes: 5 } }), /insufficient balance/);
+  nextResponse = { status: 200, body: { message: 'Message sent successfully', request_id: 'R1' } };
+  const ok = await deliverSms({ to: '9876577777', template: 'otp', vars: { otp: '2', minutes: 5 } });
+  assert.equal(ok.status, 'sent');
+  config.sms.apitxt.otpMode = 'dlt';
+});
+
+test('APITXT: a rejected API key is reported clearly and not retried', async () => {
+  const { deliverSms } = await import('../src/shared/services/channels.js');
+  const config = (await import('../src/config/env.js')).default;
+  config.sms.apitxt.otpMode = 'otp_api';
+  nextResponse = { status: 401, body: { status: 'AUTH_FAILED', message: 'Invalid Auth Key' } };
+  await assert.rejects(deliverSms({ to: '9876555555', template: 'otp', vars: { otp: '1', minutes: 5 } }), (err) => err.retryable === false && /API key/.test(err.message));
+  config.sms.apitxt.otpMode = 'dlt';
 });
 
 test('APITXT: Unified OTP API (form-urlencoded, template optional)', async () => {

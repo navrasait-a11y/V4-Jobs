@@ -1,0 +1,124 @@
+# Render Blueprint for the Freejobwala API (the web app is on Vercel).
+# New service: Render dashboard > New > Blueprint > pick this repo.
+# Existing service: copy the settings below into Settings / Environment by hand.
+# Secrets use `sync: false`: Render asks for their values once and never stores them in git.
+services:
+  - type: web
+    name: freejobwala-api
+    runtime: node
+    rootDir: backend
+    region: singapore
+    plan: starter
+    buildCommand: npm ci --omit=dev
+    startCommand: node src/server.js
+    healthCheckPath: /ready
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      - key: TRUST_PROXY
+        value: "1"
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: APP_NAME
+        value: Freejobwala
+      # Public URLs: the API's own https address (also used for the e-mail logo) and the website.
+      - key: APP_URL
+        sync: false
+      - key: WEB_URL
+        sync: false
+      - key: ADMIN_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: COOKIE_DOMAIN
+        sync: false
+
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB_NAME
+        value: freejobwala
+      - key: MONGODB_AUTO_INDEX
+        value: "true"
+      - key: REDIS_URL
+        sync: false
+      - key: REDIS_RATE_LIMIT_SCOPE
+        value: sensitive
+      - key: REDIS_SOCKET_ADAPTER
+        value: "false"
+      - key: REDIS_QUEUE_ENABLED
+        value: "true"
+      - key: RUN_SCHEDULER
+        value: "true"
+      - key: RUN_WORKERS
+        value: "true"
+
+      # Keep the values you already use: changing them logs everyone out / makes saved secrets unreadable.
+      - key: JWT_ACCESS_SECRET
+        sync: false
+      - key: ENCRYPTION_KEY
+        sync: false
+      - key: OTP_DEV_BYPASS
+        value: "false"
+
+      - key: EMAIL_PROVIDER
+        value: brevo
+      - key: BREVO_API_KEY
+        sync: false
+      - key: BREVO_WEBHOOK_TOKEN
+        sync: false
+      - key: MAIL_FROM_EMAIL
+        sync: false
+      - key: MAIL_FROM_NAME
+        value: Freejobwala
+      - key: MAIL_REPLY_TO
+        sync: false
+
+      # SMS: OTPs need only the API key (apitxt Unified OTP API). DLT keys can be added later.
+      - key: SMS_PROVIDER
+        value: apitxt
+      - key: APITXT_API_KEY
+        sync: false
+      - key: APITXT_OTP_MODE
+        value: otp_api
+      - key: APITXT_OTP_CHANNEL
+        value: sms
+
+      - key: STORAGE_DRIVER
+        value: r2
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_PUBLIC_BUCKET
+        sync: false
+      - key: R2_PRIVATE_BUCKET
+        sync: false
+      - key: R2_PUBLIC_URL
+        sync: false
+
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
+      - key: COMPANY_GSTIN
+        sync: false
+      - key: COMPANY_LEGAL_NAME
+        sync: false
+      - key: COMPANY_ADDRESS
+        sync: false
+      - key: COMPANY_STATE_CODE
+        value: "08"
+
+      - key: GOOGLE_CLIENT_IDS
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false
+      - key: SENTRY_DSN
+        sync: false

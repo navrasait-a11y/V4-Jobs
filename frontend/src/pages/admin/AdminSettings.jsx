@@ -213,7 +213,13 @@ const ProviderTests = () => {
   const [to, setTo] = useState('');
   const [mobile, setMobile] = useState('');
   const email = useAction(() => adminApi.post('/settings/test-email', { to }), { success: 'Test e-mail sent. Check the inbox.' });
-  const sms = useAction(() => adminApi.post('/settings/test-sms', { mobile, template: 'generic' }), { success: 'Test SMS sent' });
+  const [result, setResult] = useState(null);
+  // An OTP test goes the same way as a real login OTP, so it proves sign-in SMS works end to end.
+  const sms = useAction(() => adminApi.post('/settings/test-sms', { mobile, template: 'otp' }), {
+    silent: true,
+    onSuccess: (data) => setResult({ ok: true, text: data?.providerId ? `Accepted by apitxt (request ${data.providerId}). The SMS should arrive within a minute.` : 'Accepted. The SMS should arrive within a minute.' }),
+    onError: (e) => setResult({ ok: false, text: e.message }),
+  });
   return (
     <div className="surface mt-4 p-5">
       <h3 className="text-sm font-bold text-brand-dark">Test e-mail and SMS delivery</h3>
@@ -226,12 +232,18 @@ const ProviderTests = () => {
           </Button>
         </form>
         <form className="flex items-end gap-2" onSubmit={(e) => { e.preventDefault(); if (mobile.length === 10) sms.mutate(); }}>
-          <TextField className="flex-1" label="Send a test SMS to" inputMode="numeric" value={mobile} onChange={(e) => setMobile(e.target.value.replace(/\D/g, '').slice(0, 10))} placeholder="10-digit mobile" />
+          <TextField className="flex-1" label="Send a test OTP SMS to" inputMode="numeric" value={mobile} onChange={(e) => setMobile(e.target.value.replace(/\D/g, '').slice(0, 10))} placeholder="10-digit mobile" />
           <Button type="submit" size="sm" variant="outline" className="h-11" disabled={mobile.length !== 10} loading={sms.isPending}>
             Send
           </Button>
         </form>
       </div>
+      {result && (
+        <Alert tone={result.ok ? 'success' : 'error'} className="mt-3">
+          {result.text}
+        </Alert>
+      )}
+      <p className="mt-3 text-xs text-brand-gray-muted">Login OTPs go through the apitxt Unified OTP API, which needs only the API key. Alerts, interview and bulk SMS need DLT templates and are skipped until those are added.</p>
     </div>
   );
 };

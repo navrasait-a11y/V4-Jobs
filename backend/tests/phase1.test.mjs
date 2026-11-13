@@ -194,6 +194,32 @@ test('admin settings are validated before they are saved, and masked secrets kee
   assert.deepEqual([stored.enabled, stored.apiKey, stored.apiUrl], [false, 'secret-key-9876', 'https://api.arattai.test/send']);
 });
 
+test('e-mails use the platform logo served by the API', async () => {
+  const fs = await import('node:fs');
+  const res = await request(app).get('/brand/logo.png');
+  assert.equal(res.status, 200);
+  assert.match(res.headers['content-type'], /image\/png/);
+  const site = fs.readFileSync(new URL('../../frontend/public/logo.png', import.meta.url));
+  assert.ok(Buffer.compare(res.body, site) === 0, 'same file as the website logo');
+
+  const config = (await import('../src/config/env.js')).default;
+  const { logoUrl, renderEmail } = await import('../src/shared/services/emailTemplates.js');
+  const saved = { app: config.urls.app, web: config.urls.web };
+  config.urls.app = 'https://api.freejobwala.test';
+  config.urls.web = 'https://freejobwala.test';
+  assert.equal(logoUrl(), 'https://api.freejobwala.test/brand/logo.png');
+  assert.match(renderEmail('otp', { otp: '1', minutes: 5 }).html, /<img src="https:\/\/api\.freejobwala\.test\/brand\/logo\.png"/);
+  config.urls.app = 'http://localhost:5000';
+  assert.equal(logoUrl(), 'https://freejobwala.test/logo.png', 'falls back to the website copy');
+  config.urls.web = 'http://localhost:3000';
+  assert.equal(logoUrl(), null, 'only a local machine gets the text logo');
+  const text = renderEmail('applicationStatus', { name: "D'Souza", jobTitle: 'Sales "Lead"', company: 'A & B', status: 'Shortlisted' }).text;
+  assert.match(text, /Hi D'Souza,/);
+  assert.match(text, /Sales "Lead"/);
+  assert.match(text, /A & B/);
+  Object.assign(config.urls, saved);
+});
+
 test('data export holds the account and its records but no secrets or storage keys', async () => {
   const { exportMyData } = await import('../src/modules/users/dataExport.service.js');
   const data = await exportMyData(ctx.user._id);

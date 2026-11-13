@@ -13,14 +13,17 @@ test.describe('Job search', () => {
 
   test('filters keep other options of the same group (disjunctive facets)', async ({ page }) => {
     await page.goto('/jobs');
-    const department = page.locator('aside').getByRole('button', { name: /Department/ });
+    const group = page.locator('aside').getByRole('group', { name: 'Department' });
+    const department = group.getByRole('button', { name: /Department/ });
     if ((await department.getAttribute('aria-expanded')) === 'false') await department.click();
-    const first = page.locator('aside label').filter({ has: page.locator('input[type=checkbox]') }).first();
+    const options = group.locator('label').filter({ has: page.locator('input[type=checkbox]') });
+    await expect(options.first()).toBeVisible(); // department counts load after the page
+    const first = options.first();
     const name = (await first.innerText()).replace(/\(\d+\)/, '').trim();
     await first.click();
     await expect(page).toHaveURL(/department=/);
     // Other departments are still listed so a second one can be added.
-    await expect(page.locator('aside label').filter({ has: page.locator('input[type=checkbox]') })).not.toHaveCount(1);
+    await expect(options).not.toHaveCount(1);
     await expect(page.getByText('1 filter applied')).toBeVisible();
     await expect(page.locator('aside')).toContainText(name);
   });

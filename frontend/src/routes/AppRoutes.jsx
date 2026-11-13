@@ -48,6 +48,7 @@ const EmployerLanding = lazy(() => import('../pages/public/EmployerLanding'));
 const AdminLogin = lazy(() => import('../pages/public/AdminLogin'));
 const AdminPostJob = lazy(() => import('../pages/admin/AdminPostJob'));
 const SystemHealth = lazy(() => import('../pages/admin/SystemHealth'));
+const RiskSignals = lazy(() => import('../pages/admin/RiskSignals'));
 const SearchInsights = lazy(() => import('../pages/admin/SearchInsights'));
 const AdminJobEdit = lazy(() => import('../pages/admin/AdminJobEdit'));
 const ContentEditor = lazy(() => import('../pages/admin/ContentEditor'));
@@ -231,6 +232,7 @@ const AppRoutes = () => (
           <Route path="/admin/career-advice/:id/edit" element={<ContentEditor kind="blog" />} />
           <Route path="/admin/health" element={<SystemHealth />} />
           <Route path="/admin/search-insights" element={<SearchInsights />} />
+          <Route path="/admin/risk" element={<RiskSignals />} />
           {ADMIN_MODULES.map((name) => (
             <Route key={name} path={`/admin/${name}`} element={<AdminModule name={name} />} />
           ))}

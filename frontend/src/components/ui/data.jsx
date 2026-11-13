@@ -18,7 +18,7 @@ const TONES = {
 const STATUS_TONE = {
   active: 'green', verified: 'green', paid: 'green', sent: 'green', delivered: 'green', published: 'green', approved: 'green', hired: 'green', resolved: 'green', completed: 'green', accepted: 'green', connected: 'green', success: 'green', converted: 'green', opened: 'green', clicked: 'green',
   pending: 'amber', admin_review: 'amber', under_review: 'amber', draft: 'amber', queued: 'amber', open: 'amber', in_review: 'amber', created: 'amber', scheduled: 'blue', rescheduled: 'blue', new: 'blue', viewed: 'blue', applied: 'blue', screened: 'blue', interview_scheduled: 'purple', offered: 'purple', contacted: 'blue', qualified: 'purple', paused: 'gray',
-  closed: 'gray', expired: 'gray', trashed: 'gray', withdrawn: 'gray', dismissed: 'gray', cancelled: 'gray', not_submitted: 'gray', deactivated: 'gray', declined: 'red',
+  closed: 'gray', skipped: 'gray', expired: 'gray', trashed: 'gray', withdrawn: 'gray', dismissed: 'gray', cancelled: 'gray', not_submitted: 'gray', deactivated: 'gray', declined: 'red',
   rejected: 'red', failed: 'red', blocked: 'red', suspended: 'red', bounced: 'red', spam: 'red', resubmission_required: 'orange', refunded: 'orange', lost: 'red', no_show: 'red',
 };
 

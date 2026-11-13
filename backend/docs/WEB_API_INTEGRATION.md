@@ -269,7 +269,7 @@ Dates in the "MM-YYYY" pickers: send the first day of that month as ISO, e.g. `2
 | GET | `/jobs/facets` | – | Same filters. Returns counts for the side filters: `workMode, department, industry, location, role, postedBy, companyType, employmentType, kind` → `[{ value, count }]` |
 | GET | `/jobs/recommended` | candidate | AI-ranked jobs with `matchScore` (0–100) |
 | GET | `/jobs/saved` | candidate | Favourite jobs |
-| GET | `/jobs/:idOrSlug` | optional | Full job + `organizationProfile` + `isOpen`. For candidates also `hasApplied`, `application`, `isSaved`, `match{score, breakdown}` |
+| GET | `/jobs/:idOrSlug` | optional | Full job + `organizationProfile` + `isOpen`. For candidates also `hasApplied`, `application`, `isSaved`, `match{score, breakdown, matchedSkills[], missingSkills[]}` (breakdown values are 0-100 or `null` when a factor cannot be judged) |
 | GET | `/jobs/:id/similar` | – | |
 | GET | `/jobs/:id/share` | – | Share links: facebook, twitter, linkedin, whatsapp, telegram, sms, plus a plain url for Instagram / Arattai |
 | POST / DELETE | `/jobs/:id/save` | candidate | |
@@ -672,7 +672,7 @@ Every `/admin/*` call needs an `admin` or `super_admin` token. Sub-admins only s
 
 ### 7.1 Dashboard and statistics (`timespan` filter everywhere)
 
-`GET /admin/dashboard` also returns `trend[{date,candidates,employers,applications,jobs}]`, `jobsInRange`, `newEmployers`, `pending.employers` and `recent{candidates,employersToApprove,jobsToReview,orders}`. `GET /admin/system/health` = platform health (services, integrations, 24 h delivery and login stats, suspicious IPs, missing config).
+`GET /admin/dashboard` also returns `trend[{date,candidates,employers,applications,jobs}]`, `jobsInRange`, `newEmployers`, `pending.employers` and `recent{candidates,employersToApprove,jobsToReview,orders}`. `GET /admin/system/health` = platform health (services, integrations, 24 h delivery and login stats, suspicious IPs, missing config). `GET /admin/risk-signals` (permission `reports.manage`) = fraud signals: `{ total, groups[{ key, severity, title, hint, items[{ id, label, sub, link, status? }] }] }` for jobs asking candidates for money, jobs and employers with 2+ open reports, one GSTIN on several employers, 15+ jobs from one employer in 24 h, and one mobile on several accounts.
 
 | Path | Data |
 |---|---|

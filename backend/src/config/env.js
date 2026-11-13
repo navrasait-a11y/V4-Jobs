@@ -60,6 +60,8 @@ const schema = Joi.object({
     .allow('')
     .default(''),
   MAIL_FROM_NAME: Joi.string().default('Freejobwala'),
+  // Optional override for the e-mail logo. Empty = APP_URL/brand/logo.png (the platform logo served by this API)
+  MAIL_LOGO_URL: Joi.string().uri().allow('').default(''),
   MAIL_REPLY_TO: Joi.string()
     .email({ tlds: { allow: false } })
     .allow('')
@@ -153,10 +155,13 @@ function launchWarnings(e) {
     if (cond && empty.length) warnings.push(`${empty.join(', ')} not set: ${effect}`);
   };
   const dlt = e.SMS_PROVIDER === 'apitxt' && e.APITXT_OTP_MODE === 'dlt';
-  missing(e.SMS_PROVIDER === 'apitxt' && !e.APITXT_API_KEY, ['APITXT_AUTH_KEY'], 'SMS will fail');
-  missing(dlt, ['APITXT_SENDER_ID', 'APITXT_PE_ID', 'APITXT_TEMPLATE_OTP'], 'OTP SMS will fail');
+  missing(e.SMS_PROVIDER === 'apitxt' && !e.APITXT_API_KEY, ['APITXT_AUTH_KEY'], 'SMS and OTP will fail');
+  missing(dlt, ['APITXT_SENDER_ID', 'APITXT_PE_ID', 'APITXT_TEMPLATE_OTP'], 'APITXT_OTP_MODE=dlt is incomplete, so OTPs use the apitxt Unified OTP API instead');
   missing(e.SMS_PROVIDER === 'apitxt', ['APITXT_SENDER_ID', 'APITXT_PE_ID'], 'non-OTP SMS (interview, alerts, bulk) fail and are logged until DLT is set up');
   missing(e.RAZORPAY_KEY_ID, ['COMPANY_GSTIN', 'COMPANY_ADDRESS'], 'tax invoices will be incomplete');
+  missing(e.RAZORPAY_KEY_ID, ['RAZORPAY_WEBHOOK_SECRET'], 'a payment is only confirmed if the buyer stays on the page until it finishes; set the Razorpay webhook to /api/v1/billing/webhooks/razorpay');
+  if (/^rzp_test_/.test(e.RAZORPAY_KEY_ID || '')) warnings.push('RAZORPAY_KEY_ID is a test key: no real money is collected. Switch to the live key before launch');
+  if (/localhost|127\.0\.0\.1/.test(e.WEB_URL || '')) warnings.push('WEB_URL points to localhost: links and the logo in e-mails will not work for users');
   return warnings;
 }
 
@@ -203,6 +208,7 @@ const config = Object.freeze({
   appName: env.APP_NAME,
   apiPrefix: env.API_PREFIX,
   urls: { app: env.APP_URL, web: env.WEB_URL, admin: env.ADMIN_URL },
+  mail: { logoUrl: env.MAIL_LOGO_URL },
   corsOrigins: list(env.CORS_ORIGINS),
   trustProxy: env.TRUST_PROXY,
   logLevel: env.LOG_LEVEL,

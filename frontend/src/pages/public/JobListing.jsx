@@ -115,7 +115,7 @@ function toApiParams(filters) {
 const Accordion = ({ icon, title, defaultOpen, count, children }) => {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="border-b border-brand-border py-3.5 last:border-0">
+    <div role="group" aria-label={title} className="border-b border-brand-border py-3.5 last:border-0">
       <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="flex w-full items-center justify-between text-left">
         <span className="flex items-center gap-2 text-sm font-semibold text-brand-dark">
           <Icon name={icon} size={18} className="text-brand-gray-muted" /> {title}

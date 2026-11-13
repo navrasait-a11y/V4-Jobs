@@ -309,6 +309,20 @@ function alertJobFilter(alert, since) {
   return filter;
 }
 
+const inr = (n) => `Rs ${n >= 100000 ? `${+(n / 100000).toFixed(1)} L` : n >= 1000 ? `${+(n / 1000).toFixed(0)}k` : n}`;
+/** "2 - 5 yrs" / "Fresher" for the alert e-mail. */
+function alertExperience(e) {
+  if (!e || (e.min === undefined && e.max === undefined)) return '';
+  if (!e.min && !e.max) return 'Fresher';
+  return e.max ? `${e.min || 0} - ${e.max} yrs` : `${e.min}+ yrs`;
+}
+/** "Rs 25k - 40k a month", or nothing when the employer hides the salary. */
+function alertSalary(s) {
+  if (!s || s.hidden || (!s.min && !s.max)) return '';
+  const range = s.min && s.max ? `${inr(s.min)} - ${inr(s.max).replace('Rs ', '')}` : inr(s.min || s.max);
+  return `${range} ${s.period === 'yearly' ? 'a year' : 'a month'}`;
+}
+
 async function deliverDigest(alert, jobs) {
   if (!jobs.length || !alert.user) return false;
   const fresh = [];
@@ -344,7 +358,7 @@ async function deliverDigest(alert, jobs) {
       vars: {
         name: user.fullName,
         alertName: alert.name,
-        jobs: fresh.slice(0, 20).map((j) => ({ title: j.title, slug: j.slug, company: j.orgSnapshot?.name, location: j.locations?.[0]?.city })),
+        jobs: fresh.slice(0, 20).map((j) => ({ title: j.title, slug: j.slug, company: j.orgSnapshot?.name, location: j.locations?.[0]?.city, experience: alertExperience(j.experience), salary: alertSalary(j.salary) })),
       },
     },
   });
@@ -359,7 +373,7 @@ export async function processDueAlerts({ batch = 500 } = {}) {
   let delivered = 0;
   for (const alert of due) {
     const since = alert.lastSentAt || new Date(now.getTime() - FREQ_MS[alert.frequency]);
-    const jobs = await Job.find(alertJobFilter(alert, since)).select('title slug orgSnapshot locations').sort({ publishedAt: -1 }).limit(25).lean();
+    const jobs = await Job.find(alertJobFilter(alert, since)).select('title slug orgSnapshot locations experience salary').sort({ publishedAt: -1 }).limit(25).lean();
     if (await deliverDigest(alert, jobs)) delivered += 1;
     await JobAlert.updateOne(
       { _id: alert._id },

@@ -251,7 +251,7 @@ Set the correct `contentType`: `application/pdf`, `application/msword` or `appli
 | GET | `/jobs/facets` | – | Same query. Returns counts for the filter sheet: `workMode, department, industry, location, role, postedBy, companyType, employmentType, kind` → `[{value,count}]` |
 | GET | `/jobs/recommended` | ✔ | "Recommended jobs for you" with `matchScore` 0–100 |
 | GET | `/jobs/saved` | ✔ | Favourite jobs |
-| GET | `/jobs/:idOrSlug` | optional | Detail + `organizationProfile`, `isOpen`, `hasApplied`, `application{stage}`, `isSaved`, `match{score, breakdown}` |
+| GET | `/jobs/:idOrSlug` | optional | Detail + `organizationProfile`, `isOpen`, `hasApplied`, `application{stage}`, `isSaved`, `match{score, breakdown, matchedSkills[], missingSkills[]}` (breakdown values are 0-100 or `null` when a factor cannot be judged) |
 | GET | `/jobs/:id/similar` | – | |
 | GET | `/jobs/:id/share` | – | `{ url, whatsapp, facebook, twitter, linkedin, telegram, sms, instagram, arattai }`. Use `share_plus` with `url` |
 | POST / DELETE | `/jobs/:id/save` | ✔ | |

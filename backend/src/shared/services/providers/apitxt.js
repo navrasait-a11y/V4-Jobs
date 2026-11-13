@@ -22,8 +22,12 @@ function isSuccess(res) {
   const b = res.body;
   if (!b || typeof b !== 'object') return /success/i.test(String(b));
   const status = String(b.status ?? '').toLowerCase();
-  if (status === 'error' || status === 'failed' || status === 'fail' || b.error) return false;
-  return status === '200' || status === 'success' || /success/i.test(String(b.message || ''));
+  const message = String(b.message || '');
+  // Explicit failure words win over anything else in the reply ("OTP not sent", "Insufficient balance").
+  if (['error', 'failed', 'fail', 'auth_failed', 'false', 'warning'].includes(status) || b.error || b.success === false) return false;
+  if (/\b(not|fail(ed|ure)?|unable|insufficient|invalid|denied|rejected|error)\b/i.test(message)) return false;
+  if (b.success === true || b.status === true) return true;
+  return status === '200' || status === 'success' || status === 'ok' || status === 'sent' || /\b(success(ful(ly)?)?|sent|queued|accepted)\b/i.test(message);
 }
 
 function requestId(body) {
@@ -32,6 +36,9 @@ function requestId(body) {
 
 function fail(res, what) {
   const msg = typeof res.body === 'object' ? res.body?.message || res.body?.error || JSON.stringify(res.body) : String(res.body).slice(0, 300);
+  if (res.status === 401 || /auth/i.test(String(res.body?.status || ''))) {
+    return new ProviderError('apitxt', `${what} rejected the API key (${msg}). Check APITXT_API_KEY on the server`, { status: res.status, retryable: false, body: res.body });
+  }
   // A 200 response with a business error (invalid template / DLT mismatch / low balance) is permanent.
   const retryable = !res.ok && isRetryableStatus(res.status);
   return new ProviderError('apitxt', `${what} failed (HTTP ${res.status}): ${msg}`, { status: res.status, retryable, body: res.body });
@@ -39,7 +46,7 @@ function fail(res, what) {
 
 function assertConfigured() {
   const c = config.sms.apitxt;
-  if (!c.authKey) throw new ProviderError('apitxt', 'APITXT_AUTH_KEY is not configured', { retryable: false });
+  if (!c.authKey) throw new ProviderError('apitxt', 'APITXT_API_KEY (or APITXT_AUTH_KEY) is not set on the server', { retryable: false });
   return c;
 }
 

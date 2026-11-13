@@ -11,7 +11,9 @@ import User from '../users/user.model.js';
 /* ------------------------------------------------------ queue job handlers */
 
 registerJob('email.send', (data) => deliverEmail(data));
-registerJob('sms.send', (data) => deliverSms(data));
+registerJob('sms.send', async (data) => {
+  await deliverSms(data); // the MessageLog is the record; keep the queue result empty
+});
 registerJob('whatsapp.send', (data) => deliverWhatsapp(data));
 registerJob('arattai.send', (data) => deliverArattai(data));
 /** Website page a push opens (same mapping as the web app's notification list). */

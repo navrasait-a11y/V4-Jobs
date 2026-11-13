@@ -125,6 +125,19 @@ Local development without third parties:
 
    Scale e-mail and notification throughput by adding `npm run worker` processes.
 
+### Render (API hosting)
+
+`render.yaml` in the repo root describes the service (Blueprint). For an existing service set the same values by hand:
+
+* **Settings:** Root directory `backend`, Build `npm ci --omit=dev`, Start `node src/server.js`, Health check path `/ready`, Node 22 (`NODE_VERSION=22`). Region close to Atlas (Singapore / Mumbai).
+* **URLs:** `APP_URL=https://<api domain>` (no trailing slash; also used for the e-mail logo at `/brand/logo.png`), `WEB_URL=https://<website>`, `ADMIN_URL` = same as `WEB_URL`, `CORS_ORIGINS=https://<website>,https://www.<website>`.
+* **Cookies:** `COOKIE_SECURE=true`. Set `COOKIE_DOMAIN=.yourdomain.com` only when the API and the website share that domain (api.freejobwala.com + freejobwala.com); leave it empty on `*.onrender.com` / `*.vercel.app`.
+* **SMS:** `SMS_PROVIDER=apitxt`, `APITXT_API_KEY=<key>`, `APITXT_OTP_MODE=otp_api`. Remove any `APITXT_OTP_MODE=dlt` until all DLT ids are approved.
+* **Payments:** live `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` (step 6 above), `COMPANY_GSTIN`, `COMPANY_ADDRESS`, `COMPANY_LEGAL_NAME`.
+* **Keep** `JWT_ACCESS_SECRET` and `ENCRYPTION_KEY` unchanged once live: a new JWT secret logs everyone out, a new encryption key makes settings saved from the admin panel unreadable.
+* After deploy: open `https://<api>/ready` (should say `ready`), `https://<api>/brand/logo.png` (the logo), then Admin > Platform Health (warnings list) and Admin > Settings > Integrations > "Send a test OTP SMS".
+* Free instances sleep after 15 minutes without traffic; the first request then takes ~1 minute and scheduled jobs pause. Use a paid instance for production.
+
 ### Redis (Upstash)
 
 Copy the TCP connection string from Upstash (database > Details) into `REDIS_URL`. It must start with `rediss://`; the REST URL and token are not used. Keep eviction **off** on the database, because BullMQ jobs must not be evicted. Pick the Upstash region closest to the server.

@@ -82,6 +82,7 @@ export const adminNav = [
   {
     title: 'Trust & Safety',
     items: [
+      { label: 'Risk Signals', to: '/admin/risk', icon: 'gpp_maybe' },
       { label: 'Reports', to: '/admin/moderation', icon: 'flag' },
       { label: 'Comments', to: '/admin/comments', icon: 'comment' },
       { label: 'Blocklist', to: '/admin/blocklist', icon: 'block' },

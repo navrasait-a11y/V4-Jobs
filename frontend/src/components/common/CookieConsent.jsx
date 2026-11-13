@@ -12,7 +12,7 @@ const CookieConsent = () => {
   const { pathname } = useLocation();
   if (consent || pathname.startsWith('/admin')) return null;
   return (
-    <div role="dialog" aria-live="polite" aria-label="Cookie consent" className="fixed inset-x-0 bottom-0 z-[80] border-t border-brand-border bg-white px-4 py-3 shadow-[0_-8px_24px_-12px_rgba(17,24,39,0.25)] sm:inset-x-auto sm:bottom-4 sm:left-4 sm:max-w-md sm:rounded-xl sm:border">
+    <div role="dialog" aria-live="polite" aria-label="Cookie consent" className="fixed inset-x-0 bottom-0 z-[45] border-t border-brand-border bg-white px-4 py-3 shadow-[0_-8px_24px_-12px_rgba(17,24,39,0.25)] sm:inset-x-auto sm:bottom-4 sm:left-4 sm:max-w-md sm:rounded-xl sm:border">
       <p className="text-sm font-semibold text-brand-dark">We use cookies</p>
       <p className="mt-1 text-[13px] leading-5 text-brand-gray">
         Essential cookies keep you signed in and the site secure. With your permission we also use cookies to show relevant ads. Read our{' '}

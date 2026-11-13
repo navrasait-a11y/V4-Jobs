@@ -10,6 +10,47 @@ import { useDocumentTitle } from '../../hooks/useData';
 import { analyticsApi, interviewApi, orgApi, responseApi } from '../../services';
 import { STAGE_LABELS, formatDateTime, timeAgo } from '../../utils/format';
 
+const FUNNEL = [
+  ['applied', 'Applied', 'bg-brand-blue'],
+  ['screened', 'Shortlisted', 'bg-[#3B82C4]'],
+  ['interview_scheduled', 'Interviewed', 'bg-brand-orange'],
+  ['offered', 'Offered', 'bg-[#8B5CF6]'],
+  ['hired', 'Hired', 'bg-brand-green'],
+];
+const ORDER = FUNNEL.map(([k]) => k);
+const day = (d) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : '');
+
+/**
+ * Hiring funnel for the last 30 days. Each application counts towards every stage it has reached,
+ * so the bars always narrow from left to right (rejected / withdrawn ones count as "applied").
+ */
+const Funnel = ({ byStage = {} }) => {
+  const reached = (stage) => Object.entries(byStage).reduce((sum, [s, n]) => sum + (stage === 'applied' || ORDER.indexOf(s) >= ORDER.indexOf(stage) ? n : 0), 0);
+  const total = reached('applied');
+  if (!total) return <p className="py-6 text-center text-sm text-brand-gray">Applications in the last 30 days show up here.</p>;
+  return (
+    <ul className="space-y-3">
+      {FUNNEL.map(([k, label, color]) => {
+        const n = reached(k);
+        const pct = Math.round((n / total) * 100);
+        return (
+          <li key={k}>
+            <div className="flex items-baseline justify-between text-sm">
+              <span className="font-medium text-brand-dark">{label}</span>
+              <span className="tabular-nums text-brand-gray">
+                <b className="text-brand-dark">{n}</b> <span className="text-xs">({pct}%)</span>
+              </span>
+            </div>
+            <div className="mt-1 h-2.5 overflow-hidden rounded-full bg-brand-tint">
+              <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.max(pct, n ? 3 : 0)}%` }} />
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
+};
+
 const Dashboard = () => {
   useDocumentTitle('Dashboard');
   const { user, organization } = useAuth();
@@ -44,9 +85,9 @@ const Dashboard = () => {
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={d?.applicationTrend || []}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F0" vertical={false} />
-                <XAxis dataKey="_id" tick={{ fontSize: 11 }} />
+                <XAxis dataKey="_id" tickFormatter={day} tick={{ fontSize: 11 }} minTickGap={20} />
                 <YAxis allowDecimals={false} tick={{ fontSize: 11 }} width={28} />
-                <Tooltip />
+                <Tooltip labelFormatter={(d) => day(d)} />
                 <Area dataKey="count" name="Applications" stroke="#0151A0" fill="#EDF4FC" />
               </AreaChart>
             </ResponsiveContainer>
@@ -66,6 +107,44 @@ const Dashboard = () => {
               </li>
             ))}
           </ul>
+        </Section>
+        <Section title="Hiring funnel" className="lg:col-span-1" actions={<Link to="/employer/analytics" className="text-xs font-semibold text-brand-blue">Full report</Link>}>
+          <Funnel byStage={d?.hiringFunnel} />
+        </Section>
+        <Section title="Team activity" className="lg:col-span-2" actions={<span className="text-xs text-brand-gray-muted">Last 30 days</span>}>
+          {!d?.recruiterProductivity?.length ? (
+            <p className="py-6 text-center text-sm text-brand-gray">Shortlists, stage changes and hires by each team member show up here.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="text-xs uppercase tracking-wide text-brand-gray-muted">
+                  <tr>
+                    <th className="border-b border-brand-border py-2 font-semibold">Member</th>
+                    <th className="border-b border-brand-border py-2 pl-3 text-right font-semibold">Jobs posted</th>
+                    <th className="border-b border-brand-border py-2 pl-3 text-right font-semibold">Actions</th>
+                    <th className="border-b border-brand-border py-2 pl-3 text-right font-semibold">Shortlisted</th>
+                    <th className="border-b border-brand-border py-2 pl-3 text-right font-semibold">Hired</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {d.recruiterProductivity.slice(0, 6).map((r) => (
+                    <tr key={r.member?._id} className="border-b border-brand-border last:border-0">
+                      <td className="py-2">
+                        <span className="flex items-center gap-2">
+                          <Avatar name={r.member?.fullName} size={28} />
+                          <span className="truncate font-medium text-brand-dark">{r.member?.fullName}</span>
+                        </span>
+                      </td>
+                      <td className="py-2 pl-3 text-right tabular-nums text-brand-gray">{r.jobsPosted || 0}</td>
+                      <td className="py-2 pl-3 text-right tabular-nums text-brand-gray">{r.actions || 0}</td>
+                      <td className="py-2 pl-3 text-right tabular-nums text-brand-gray">{r.shortlists || 0}</td>
+                      <td className="py-2 pl-3 text-right tabular-nums font-semibold text-brand-green">{r.hires || 0}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </Section>
         <Section title="Latest applicants" className="lg:col-span-2" actions={<Link to="/employer/applications" className="text-xs font-semibold text-brand-blue">View all</Link>}>
           {!recent.data?.data?.length && <p className="text-sm text-brand-gray">No applications yet.</p>}

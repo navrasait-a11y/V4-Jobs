@@ -61,9 +61,9 @@ const UsageReport = ({ userId, candidate = false }) => {
           columns={[
             { key: 'member', header: 'User', render: (r) => <span className="font-medium">{r.member?.fullName || '—'}</span> },
             { key: 'jobsPosted', header: 'Jobs posted', render: (r) => formatNumber(r.jobsPosted || 0) },
-            ...['processed', 'shortlisted', 'hired']
-              .filter((k) => (d.recruiterProductivity || []).some((r) => r[k] !== undefined))
-              .map((k) => ({ key: k, header: titleCase(k), render: (r) => formatNumber(r[k] || 0) })),
+            { key: 'actions', header: 'Candidate actions', render: (r) => formatNumber(r.actions || 0) },
+            { key: 'shortlists', header: 'Shortlisted', render: (r) => formatNumber(r.shortlists || 0) },
+            { key: 'hires', header: 'Hired', render: (r) => formatNumber(r.hires || 0) },
           ]}
           rows={d.recruiterProductivity || []}
           empty={<EmptyState icon="group" title="No team activity yet" />}

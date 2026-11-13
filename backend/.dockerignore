@@ -7,3 +7,5 @@ coverage
 *.log
 .git
 docs
+*.local.md
+DEMO_LOGINS*

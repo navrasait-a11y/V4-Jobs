@@ -71,6 +71,7 @@ const AdminOverview = () => {
   const { user } = useAuth();
   const [timespan, setTimespan] = useState('30d');
   const query = useQuery({ queryKey: ['admin', 'dashboard', timespan], queryFn: () => adminApi.get('/dashboard', { timespan }), placeholderData: keepPreviousData });
+  const risk = useQuery({ queryKey: ['admin', 'risk-count'], queryFn: () => adminApi.get('/risk-signals/count'), staleTime: 5 * 60 * 1000 });
   const logins = useQuery({ queryKey: ['admin', 'logins', timespan], queryFn: () => adminApi.get('/stats/logins', { timespan }), placeholderData: keepPreviousData });
   const messaging = useQuery({ queryKey: ['admin', 'messaging', timespan], queryFn: () => adminApi.get('/stats/messaging', { timespan }), placeholderData: keepPreviousData });
   if (query.isError) return <ErrorState error={query.error} onRetry={query.refetch} />;
@@ -134,6 +135,7 @@ const AdminOverview = () => {
           <Attention loading={L} icon="domain" tone="purple" label="Employers to approve" count={p.employers ?? 0} to="/admin/employers?status=pending" />
           <Attention loading={L} icon="verified_user" tone="orange" label="KYC documents" count={p.kycReviews ?? 0} to="/admin/kyc" />
           <Attention loading={L} icon="rule" tone="blue" label="Jobs to review" count={p.jobReviews ?? 0} to="/admin/jobs?status=admin_review" />
+          <Attention loading={risk.isPending} icon="gpp_maybe" tone="red" label="Risk signals" count={risk.data?.total ?? 0} to="/admin/risk" />
           <Attention loading={L} icon="flag" tone="red" label="Open reports" count={p.reports ?? 0} to="/admin/moderation?status=open" />
           <Attention loading={L} icon="support_agent" tone="green" label="Support chats" count={p.supportChats ?? 0} to="/admin/support-chat" />
         </div>

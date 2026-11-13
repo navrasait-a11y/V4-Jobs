@@ -16,6 +16,7 @@ import useAuthStore from '../../store/useAuthStore';
 import { formatDate, formatExperience, formatLocations, formatSalary, timeAgo, titleCase } from '../../utils/format';
 import useSeo from '../../hooks/useSeo';
 import AdSlot from '../../components/common/AdSlot';
+import MatchCard from '../../components/candidate/MatchCard';
 
 const Text = ({ value }) => <div className="whitespace-pre-line text-sm leading-relaxed text-brand-gray">{value}</div>;
 /** Hides empty rows instead of a dash. */
@@ -236,20 +237,7 @@ const JobDetails = () => {
             </div>
           </div>
 
-          {job.match && (
-            <Section title="Your match">
-              <div className="flex items-center gap-4">
-                <span className="text-3xl font-bold text-brand-green">{job.match.score}%</span>
-                <div className="flex flex-wrap gap-2 text-xs text-brand-gray">
-                  {Object.entries(job.match.breakdown || {}).map(([k, v]) => (
-                    <span key={k} className="rounded-full bg-brand-tint px-2.5 py-1">
-                      {titleCase(k)}: {typeof v === 'number' ? Math.round(v) : String(v)}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </Section>
-          )}
+          {job.match && <MatchCard match={job.match} applied={job.hasApplied} />}
 
           {job.description && (
             <Section title="Job description">

@@ -34,7 +34,7 @@ export async function sendOtp({ target, channel, purpose, meta }) {
 
   const minutes = Math.round(config.otp.ttl / 60);
   if (channel === 'email') {
-    await sendEmail({ to: target, template: 'otp', vars: { otp: code, minutes }, category: 'otp' });
+    await sendEmail({ to: target, template: 'otp', vars: { otp: code, minutes, purpose }, category: 'otp' });
   } else if (channel === 'whatsapp') {
     await sendWhatsapp(target, { template: 'otp_verification', params: [code], text: `*${code}* is your ${config.appName} verification code. Valid for ${minutes} minutes. Do not share this code with anyone.` });
   } else {

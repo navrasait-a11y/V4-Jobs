@@ -1,7 +1,10 @@
 # SMS templates for DLT registration
 
-> **OTPs work without DLT.** With `APITXT_OTP_MODE=otp_api` (default) every OTP goes through the apitxt
-> Unified OTP API (`/api/sendOTP`) and only `APITXT_AUTH_KEY` is needed. Later you can set
+> **OTPs work without DLT.** Every OTP goes through the apitxt Unified OTP API (`/api/sendOTP`) and only
+> `APITXT_API_KEY` (or `APITXT_AUTH_KEY`) is needed. Even with `APITXT_OTP_MODE=dlt`, OTPs fall back to this
+> API until `APITXT_SENDER_ID`, `APITXT_PE_ID` and the OTP template id are all set, so a half-finished DLT
+> setup never stops logins. Non-OTP SMS without a DLT template are logged as **skipped** (not failed, not
+> retried). Check delivery from Admin > Settings > Integrations > "Send a test OTP SMS". Later you can set
 > `APITXT_OTP_TEMPLATE_ID` (your apitxt SMS template), `APITXT_OTP_CHANNEL=whatsapp` with
 > `APITXT_OTP_TEMPLATE_NAME`, or switch to `APITXT_OTP_MODE=dlt`. The templates below are still needed for
 > non-OTP SMS (interview, reminders, alerts, bulk).

@@ -18,7 +18,7 @@
     "demo:remove": "node scripts/demo-data.js remove",
     "lint": "eslint src scripts",
     "format": "prettier --write \"src/**/*.js\" \"scripts/**/*.js\"",
-    "test": "node --test --test-concurrency=1 tests/e2e.test.mjs tests/providers.test.mjs tests/redis-outage.test.mjs tests/storage-r2.test.mjs tests/demo-remove.test.mjs tests/invoice.test.mjs tests/assistant.test.mjs tests/other-forms.test.mjs tests/profile-views.test.mjs tests/search-suggest.test.mjs tests/phase1.test.mjs tests/folders.test.mjs",
+    "test": "node --test --test-concurrency=1 tests/e2e.test.mjs tests/providers.test.mjs tests/redis-outage.test.mjs tests/storage-r2.test.mjs tests/demo-remove.test.mjs tests/invoice.test.mjs tests/assistant.test.mjs tests/other-forms.test.mjs tests/profile-views.test.mjs tests/search-suggest.test.mjs tests/phase1.test.mjs tests/folders.test.mjs tests/risk.test.mjs",
     "routes": "node scripts/list-routes.mjs",
     "seed:pages": "node scripts/seed-pages.js",
     "r2:check": "node scripts/check-r2.js",
