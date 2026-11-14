@@ -81,8 +81,18 @@ input:focus-visible, textarea:focus-visible, select:focus-visible, [contentedita
   word-wrap: normal;
   direction: ltr;
   -webkit-font-feature-settings: 'liga';
+  font-feature-settings: 'liga';
   -webkit-font-smoothing: antialiased;
+  /* Every icon is a 1em square: the space is kept while the font loads, so nothing jumps. */
+  width: 1em;
+  height: 1em;
+  overflow: hidden;
+  flex-shrink: 0;
+  user-select: none;
 }
+/* Icons are drawn from their names ("expand_more"); until the icon font is ready those names would
+   show as text, so they stay invisible (see revealIcons in main.jsx). */
+html:not(.icons-ready) .material-symbols-outlined { color: transparent !important; }
 
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }

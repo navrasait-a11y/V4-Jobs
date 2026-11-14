@@ -14,6 +14,8 @@ import Organization from '../employers/organization.model.js';
 import * as s from './job.service.js';
 import * as v from './job.validation.js';
 import { correctQuery, suggestCompanies } from './job.spell.js';
+import { sendFile } from '../../shared/utils/excel.js';
+import { buildTemplateFile, getTemplateSpec } from '../imports/importTemplates.js';
 
 /* ----------------------------------------------------------------- public */
 
@@ -94,6 +96,12 @@ employerJobs.get('/', requireEmployer(), validate(v.employerJobsQuery), async (r
 employerJobs.post('/', requireEmployer('job.post'), validate(v.createJob), async (req, res) => {
   const { publish, ...data } = req.body;
   return created(res, await s.createJob(req.user, data, { publish }), publish ? 'Job published' : 'Draft saved');
+});
+employerJobs.get('/bulk-import/template', requireEmployer('job.post'), validate({ query: Joi.object({ format: Joi.string().valid('json', 'xlsx', 'csv').default('json') }) }), async (req, res) => {
+  if (req.query.format === 'json') return ok(res, await getTemplateSpec('jobs'));
+  const file = await buildTemplateFile('jobs', req.query);
+  res.setHeader('Cache-Control', 'no-store');
+  return sendFile(res, file.buffer, file.filename, file.type);
 });
 employerJobs.post(
   '/bulk-import',

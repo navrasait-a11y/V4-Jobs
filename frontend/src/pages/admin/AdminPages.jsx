@@ -16,6 +16,8 @@ import useDebounce from '../../hooks/useDebounce';
 import { useAction, useDocumentTitle } from '../../hooks/useData';
 import { useSocketEvent } from '../../hooks/useRealtime';
 import { adminApi, lookupApi } from '../../services';
+import ImportDialog from '../../components/common/ImportDialog';
+import { adminImportGuide } from '../../components/common/importGuides';
 import { formatDate, formatDateTime, timeAgo, titleCase } from '../../utils/format';
 
 /** One config-driven screen per URL segment. */
@@ -150,10 +152,8 @@ export const Taxonomy = () => {
 
   const add = useAction(() => adminApi.post(`/master-data/${type}`, { name: name.trim(), ...(parentType ? { parent } : {}) }), { success: 'Option added', invalidate: ['admin'], onSuccess: () => setName('') });
   const toggle = useAction(({ id, isActive }) => adminApi.patch(`/master-data/item/${id}`, { isActive }), { invalidate: ['admin'] });
-  const importList = useAction((file) => adminApi.upload(`/master-data/${type}/import`, { file }), {
-    success: (r) => `Import finished: ${r.inserted} added, ${r.updated} updated${r.errors?.length ? `, ${r.errors.length} rows skipped` : ''}`,
-    invalidate: ['admin'],
-  });
+  const [importing, setImporting] = useState(false);
+  const typeLabel = (types || []).find((t) => t.key === type)?.label || 'options';
   const remove = useAction((id) => adminApi.del(`/master-data/item/${id}`), { success: 'Option deleted', invalidate: ['admin'], onSuccess: () => setRemoving(null) });
   const parentLabel = (o) => (o.parent ? (type === 'specialisation' && o.parent.parent?.name ? `${o.parent.parent.name} > ${o.parent.name}` : o.parent.name) : '—');
 
@@ -167,11 +167,20 @@ export const Taxonomy = () => {
         <Button size="sm" variant="outline" className="h-10" onClick={() => adminApi.download(`/master-data/${type}/export`, {}, `${type}.xlsx`)}>
           Export
         </Button>
-        <label className="inline-flex h-10 cursor-pointer items-center rounded-md border border-brand-border px-3.5 text-[13px] font-semibold text-brand-dark hover:border-[#AEB7C4]" title="Excel columns: Name, Parent, Order, Active">
+        <Button size="sm" variant="outline" className="h-10" onClick={() => setImporting(true)}>
           Import
-          <input type="file" accept=".xlsx,.csv" hidden onChange={(e) => e.target.files?.[0] && importList.mutate(e.target.files[0])} />
-        </label>
+        </Button>
       </div>
+      <ImportDialog
+        key={type}
+        open={importing}
+        onClose={() => setImporting(false)}
+        title={`Import ${typeLabel}`}
+        description="Add or update the options of this list from Excel or CSV"
+        guide={adminImportGuide('master-data', { type })}
+        onImport={(file) => adminApi.upload(`/master-data/${type}/import`, { file })}
+        onDone={() => query.refetch()}
+      />
       <form
         className="mb-4 flex flex-wrap gap-2"
         onSubmit={(e) => {

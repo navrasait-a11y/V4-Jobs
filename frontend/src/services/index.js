@@ -278,6 +278,8 @@ export const employerJobApi = {
   callbacks: (id, params) => list(`/employer/jobs/${id}/callbacks`, params),
   share: (id) => get(`/employer/jobs/${id}/share`),
   bulkImport: (file, publish) => upload('/employer/jobs/bulk-import', { file }, { publish }),
+  importTemplate: () => get('/employer/jobs/bulk-import/template'),
+  downloadImportTemplate: (format) => downloadFile('/employer/jobs/bulk-import/template', { params: { format }, fallbackName: `freejobwala-jobs-sample.${format}` }),
 };
 
 export const responseApi = {

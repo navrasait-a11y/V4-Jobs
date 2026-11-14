@@ -65,7 +65,8 @@ function store(prefix) {
 function limiter(prefix, { windowMs, limit, keyByUser = false, message }) {
   return rateLimit({
     windowMs,
-    limit: config.isTest ? 10000 : limit,
+    // Tests, and the OTP limit while OTP_DEV_BYPASS is on (never in production; no SMS is sent, every code is fixed).
+    limit: config.isTest || (prefix === 'otp' && config.otp.devBypass) ? 10000 : limit,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
     store: store(prefix),

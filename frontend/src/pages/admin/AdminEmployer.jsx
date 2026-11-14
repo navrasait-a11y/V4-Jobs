@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import AccountPanel, { EMPLOYER_LABELS } from '../../components/admin/AccountPanel';
 import { MediaField, PlanAndWallet } from '../../components/admin/AdminActions';
 import UserActivity from '../../components/admin/UserActivity';
@@ -15,6 +15,8 @@ import { DuplicateEmployer } from './AdminPages';
 import { MemberModal } from '../employer/Employees';
 import { adminApi } from '../../services';
 import { loginAs } from '../../components/admin/loginAs';
+import ImportDialog from '../../components/common/ImportDialog';
+import { adminImportGuide } from '../../components/common/importGuides';
 import { gstinHint } from '../../utils/gstin';
 import { formatDate, formatDateTime, formatNumber, timeAgo, titleCase, toInputDate } from '../../utils/format';
 
@@ -278,51 +280,20 @@ const MemberAccount = ({ userId, onClose }) => {
 
 /** Bulk job / internship posting for one employer from the Excel template. */
 const ImportJobs = ({ orgId, onClose }) => {
-  const [file, setFile] = useState(null);
+  const client = useQueryClient();
   const [publish, setPublish] = useState(false);
-  const [result, setResult] = useState(null);
-  const run = useAction(() => adminApi.upload('/jobs/import', { file }, { organizationId: orgId, publish }), { invalidate: ['admin'], silent: true, onSuccess: setResult });
-  const errors = result?.errors || [];
   return (
-    <Modal
+    <ImportDialog
       open
       onClose={onClose}
       title="Import jobs from Excel"
-      size="sm"
-      footer={
-        result ? (
-          <Button size="sm" variant="primaryBlue" onClick={onClose}>
-            Done
-          </Button>
-        ) : (
-          <Button size="sm" variant="primary" disabled={!file} loading={run.isPending} onClick={() => run.mutate()}>
-            Import
-          </Button>
-        )
-      }
+      description="Each row becomes one job or internship for this employer"
+      guide={adminImportGuide('jobs')}
+      onImport={(file) => adminApi.upload('/jobs/import', { file }, { organizationId: orgId, publish })}
+      onDone={() => client.invalidateQueries({ queryKey: ['admin'] })}
     >
-      {result ? (
-        <div className="space-y-2 text-sm text-brand-gray">
-          <p>
-            <b className="text-brand-dark">{result.created ?? 0}</b> jobs added{result.skipped !== undefined ? `, ${result.skipped} skipped` : ''}.
-          </p>
-          {errors.length > 0 && (
-            <ul className="max-h-48 list-disc space-y-1 overflow-y-auto pl-5 text-xs text-brand-red">
-              {errors.slice(0, 50).map((e, i) => (
-                <li key={i}>{typeof e === 'string' ? e : `Row ${e.row}: ${e.message || e.error}`}</li>
-              ))}
-            </ul>
-          )}
-        </div>
-      ) : (
-        <div className="space-y-3">
-          <p className="text-sm text-brand-gray">Upload the job sheet (.xlsx or .csv). Each row becomes one job or internship for this employer.</p>
-          <input type="file" accept=".xlsx,.xls,.csv" aria-label="Excel file" onChange={(e) => setFile(e.target.files?.[0] || null)} className="block w-full text-sm text-brand-gray file:mr-3 file:rounded-lg file:border-0 file:bg-brand-blue-tint file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-blue" />
-          <CheckboxField label="Publish right away" description="Leave off to keep the imported jobs as drafts for review" checked={publish} onChange={(e) => setPublish(e.target.checked)} />
-          {run.isError && <p className="text-sm text-brand-red">{run.error.message}</p>}
-        </div>
-      )}
-    </Modal>
+      <CheckboxField label="Publish right away" description="Leave off to keep the imported jobs as drafts for review" checked={publish} onChange={(e) => setPublish(e.target.checked)} />
+    </ImportDialog>
   );
 };
 

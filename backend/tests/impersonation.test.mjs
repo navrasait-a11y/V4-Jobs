@@ -85,3 +85,20 @@ test('ending the session does not sign the admin out', async () => {
   const admin = await request(app).post(`${api}/auth/refresh`).set('origin', WEB).set('cookie', `fjw_rt=${ctx.adminTokens.refreshToken}`).send({});
   assert.equal(admin.status, 200, 'the admin is still signed in');
 });
+
+test('login as a candidate imported from Excel survives a refresh', async () => {
+  const { importCandidates } = await import('../src/modules/admin/admin.users.service.js');
+  const { buildTemplateFile } = await import('../src/modules/imports/importTemplates.js');
+  const { buffer } = await buildTemplateFile('candidates');
+  const r = await importCandidates(ctx.admin, buffer, { mode: 'create' });
+  assert.equal(r.created, 2, JSON.stringify(r.errors));
+  const User = (await import('../src/modules/users/user.model.js')).default;
+  const imported = await User.findOne({ email: 'asha.verma@example.com' });
+  const res = await request(app).post(`${api}/admin/users/${imported._id}/impersonate`).set(bearer(ctx.adminTokens.accessToken));
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  const tokens = res.body.data.tokens;
+  const refreshed = await request(app).post(`${api}/auth/refresh`).set('origin', WEB).send({ refreshToken: tokens.refreshToken });
+  assert.equal(refreshed.status, 200, JSON.stringify(refreshed.body));
+  const me = await request(app).get(`${api}/auth/me`).set(bearer(refreshed.body.data.tokens.accessToken));
+  assert.equal(me.status, 200, JSON.stringify(me.body));
+});

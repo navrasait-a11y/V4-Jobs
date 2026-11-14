@@ -1,8 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import ShareMenu from '../../components/common/ShareMenu';
 import UpsellNotice from '../../components/employer/UpsellNotice';
+import ImportDialog from '../../components/common/ImportDialog';
+import { employerJobsImportGuide } from '../../components/common/importGuides';
 import Button from '../../components/ui/Button';
 import { Badge, DataTable, PageHeader, Pagination, SearchInput, SimpleSelect, StatusBadge, Tabs } from '../../components/ui/data';
 import { CheckboxField } from '../../components/ui/form';
@@ -80,7 +82,7 @@ const Jobs = () => {
   const [q, setQ] = useState(filters.q || '');
   const [confirm, setConfirm] = useState(null);
   const [sharing, setSharing] = useState(null);
-  const fileRef = useRef(null);
+  const [importing, setImporting] = useState(false);
   const debounced = useDebounce(q, 400);
   useEffect(() => {
     if (debounced !== (filters.q || '')) setFilters({ q: debounced });
@@ -96,7 +98,6 @@ const Jobs = () => {
   const boost = useAction(employerJobApi.boost, { invalidate: ['employer-jobs', 'subscriptions'], success: 'Job boosted. It now shows at the top for 15 days', onSuccess: () => setConfirm(null) });
   const publish = useAction((id) => employerJobApi.publish(id), { ...inv, success: 'Job published', invalidate: ['employer-jobs', 'subscriptions'] });
   const duplicate = useAction(employerJobApi.duplicate, { success: 'Draft copy created', onSuccess: (j) => navigate(`/employer/jobs/${j._id}/edit`) });
-  const bulk = useAction((file) => employerJobApi.bulkImport(file, false), { ...inv, success: (r) => `Imported ${r.created ?? r.imported ?? ''} jobs as drafts` });
 
   const columns = [
     {
@@ -135,17 +136,7 @@ const Jobs = () => {
         title="Jobs"
         actions={
           <>
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".xlsx"
-              hidden
-              onChange={(e) => {
-                if (e.target.files?.[0]) bulk.mutate(e.target.files[0]);
-                e.target.value = '';
-              }}
-            />
-            <Button size="sm" variant="outline" loading={bulk.isPending} onClick={() => fileRef.current?.click()}>
+            <Button size="sm" variant="outline" leftIcon={<Icon name="upload_file" size={16} />} onClick={() => setImporting(true)}>
               Bulk import
             </Button>
             <Button asChild size="sm" variant="primary">
@@ -154,7 +145,17 @@ const Jobs = () => {
           </>
         }
       />
-      <UpsellNotice error={publish.error || bulk.error || boost.error} />
+      <UpsellNotice error={publish.error || boost.error} />
+      <ImportDialog
+        open={importing}
+        onClose={() => setImporting(false)}
+        title="Bulk import jobs"
+        description="Post many jobs or internships at once from Excel or CSV. They are saved as drafts for you to review and publish."
+        guide={employerJobsImportGuide}
+        onImport={(file) => employerJobApi.bulkImport(file, false)}
+        onDone={() => query.refetch()}
+        renderError={(e) => (e.status === 402 ? <UpsellNotice error={e} /> : null)}
+      />
       <Tabs className="mb-4" value={filters.status || ''} onChange={(status) => setFilters({ status })} tabs={STATUSES.map((s) => ({ value: s, label: s ? titleCase(s) : 'All', count: s ? counts[s] || 0 : undefined }))} />
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <SearchInput className="w-full sm:max-w-xs" value={q} onChange={setQ} placeholder="Search title, job ID or client" />

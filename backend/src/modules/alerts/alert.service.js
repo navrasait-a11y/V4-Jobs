@@ -3,7 +3,7 @@ import ApiError from '../../shared/errors/ApiError.js';
 import { ROLES } from '../../shared/constants/index.js';
 import { escapeRegex, normalizeEmail, normalizeMobile } from '../../shared/utils/helpers.js';
 import { dateRangeFilter } from '../../shared/utils/timespan.js';
-import { parseWorkbook } from '../../shared/utils/excel.js';
+import { cellList, parseWorkbook } from '../../shared/utils/excel.js';
 import { putFile } from '../../shared/services/storage.service.js';
 import { extractText } from '../../shared/services/resumeParser.js';
 import Job from '../jobs/job.model.js';
@@ -234,30 +234,29 @@ export async function adminSendJobs(alertIds, jobIds) {
   return { sent };
 }
 
+export const ALERT_HEADERS = {
+  'alert name': 'name',
+  'email id': 'email',
+  email: 'email',
+  'mobile number': 'mobile',
+  mobile: 'mobile',
+  'key skills': 'keySkills',
+  'job title': 'jobTitle',
+  locations: 'locations',
+  frequency: 'frequency',
+};
+
 export async function importAlerts(admin, buffer) {
-  const rows = await parseWorkbook(buffer, {
-    'alert name': 'name',
-    'email id': 'email',
-    'mobile number': 'mobile',
-    'key skills': 'keySkills',
-    'job title': 'jobTitle',
-    locations: 'locations',
-    frequency: 'frequency',
-  });
-  const list = (v) =>
-    v
-      ? String(v)
-          .split(',')
-          .map((x) => x.trim())
-          .filter(Boolean)
-      : [];
+  const rows = await parseWorkbook(buffer, ALERT_HEADERS, { maxRows: 10000 });
+  const list = cellList;
   const result = { total: rows.length, created: 0, errors: [] };
   for (const row of rows) {
     try {
       const mobile = normalizeMobile(row.mobile);
       const email = normalizeEmail(row.email);
-      const user = await User.findOne({ $or: [mobile ? { mobile } : null, email ? { email } : null].filter(Boolean) });
-      if (!user) throw new Error('No candidate found for this e-mail / mobile');
+      if (!mobile && !email) throw new Error('E-mail ID or Mobile Number is required');
+      const user = await User.findOne({ role: ROLES.CANDIDATE, $or: [mobile ? { mobile } : null, email ? { email } : null].filter(Boolean) });
+      if (!user) throw new Error('No registered candidate found for this e-mail / mobile');
       await JobAlert.create({
         user: user._id,
         name: row.name || 'Job alert',

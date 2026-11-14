@@ -2,7 +2,7 @@ import ApiError from '../../shared/errors/ApiError.js';
 import { ROLES, USER_STATUS, ADMIN_ROLES, EMPLOYER_TYPE } from '../../shared/constants/index.js';
 import { escapeRegex, normalizeEmail, normalizeMobile, pick, isObjectId } from '../../shared/utils/helpers.js';
 import { dateRangeFilter } from '../../shared/utils/timespan.js';
-import { parseWorkbook } from '../../shared/utils/excel.js';
+import { cellList, cellNumber, parseWorkbook } from '../../shared/utils/excel.js';
 import { randomToken, sha256, randomPassword } from '../../shared/utils/crypto.js';
 import config from '../../config/env.js';
 import { signedUrl, readFile } from '../../shared/services/storage.service.js';
@@ -252,7 +252,7 @@ export async function bulkUserAction(admin, ids, action, value) {
 
 /* ------------------------------------------------------------ import */
 
-const CANDIDATE_HEADERS = {
+export const CANDIDATE_HEADERS = {
   'full name': 'fullName',
   'candidate name': 'fullName',
   name: 'fullName',
@@ -318,13 +318,7 @@ export async function importCandidates(admin, buffer, { mode = 'create', dryRun 
 
   const result = { total: rows.length, created: 0, updated: 0, skipped: 0, errors: [], duplicatesInFile: duplicatesInFile.length };
   const dupRows = new Set(duplicatesInFile.map((d) => d.row));
-  const list = (v) =>
-    v
-      ? String(v)
-          .split(',')
-          .map((x) => x.trim())
-          .filter(Boolean)
-      : [];
+  const list = cellList;
   for (const r of rows) {
     try {
       if (dupRows.has(r.__row)) {
@@ -336,8 +330,8 @@ export async function importCandidates(admin, buffer, { mode = 'create', dryRun 
         currentJobTitle: r.currentJobTitle,
         keySkills: list(r.keySkills).slice(0, 15),
         currentLocation: r.city ? { city: String(r.city), state: r.state ? String(r.state) : undefined } : undefined,
-        totalExperienceMonths: Number(r.totalExperienceMonths) || 0,
-        currentSalary: r.currentSalary ? Number(r.currentSalary) : undefined,
+        totalExperienceMonths: cellNumber(r.totalExperienceMonths, 'Total Experience (Months)') || 0,
+        currentSalary: cellNumber(r.currentSalary, 'Current Salary'),
         educations: r.educationLevel ? [{ level: String(r.educationLevel), degree: r.degree ? String(r.degree) : undefined, isHighest: true }] : undefined,
       };
       const match = existingKeys.get(r.email) || existingKeys.get(r.mobile);
@@ -670,7 +664,7 @@ export async function documentReminder(ids) {
   return { reminded: orgs.length };
 }
 
-const EMPLOYER_HEADERS = {
+export const EMPLOYER_HEADERS = {
   'employer type': 'employerType',
   'we are a': 'employerType',
   'company name': 'organizationName',

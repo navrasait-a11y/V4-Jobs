@@ -11,7 +11,8 @@ import { heavyLimiter } from '../../shared/middleware/rateLimit.js';
 import { upload } from '../../shared/middleware/upload.js';
 import { ok, created, paginated } from '../../shared/http/response.js';
 import { parsePagination } from '../../shared/utils/pagination.js';
-import { exportRows } from '../../shared/utils/excel.js';
+import { exportRows, sendFile } from '../../shared/utils/excel.js';
+import { TEMPLATE_KINDS, buildTemplateFile, getTemplateSpec } from '../imports/importTemplates.js';
 import { dateRangeFilter } from '../../shared/utils/timespan.js';
 import {
   objectId,
@@ -65,6 +66,21 @@ import { profileRouter } from '../candidates/candidate.routes.js';
 
 const r = Router();
 r.use(authenticate, authorize(ROLES.ADMIN));
+
+/* Import samples + format guide for every admin import (format=json feeds the import dialog). */
+r.get(
+  '/import-templates/:kind',
+  validate({
+    params: Joi.object({ kind: Joi.string().valid(...TEMPLATE_KINDS).required() }),
+    query: Joi.object({ format: Joi.string().valid('json', 'xlsx', 'csv').default('json'), type: Joi.string().max(60) }),
+  }),
+  async (req, res) => {
+    if (req.query.format === 'json') return ok(res, await getTemplateSpec(req.params.kind, { type: req.query.type }));
+    const file = await buildTemplateFile(req.params.kind, req.query);
+    res.setHeader('Cache-Control', 'no-store');
+    return sendFile(res, file.buffer, file.filename, file.type);
+  },
+);
 
 const listBase = {
   ...pagination,

@@ -35,7 +35,23 @@ export const UPLOAD_KINDS = {
   resume: { mimes: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'], maxSize: 5 * MB },
   image: { mimes: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'], maxSize: 5 * MB },
   document: { mimes: ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'], maxSize: 10 * MB },
-  excel: { mimes: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel', 'text/csv'], maxSize: 20 * MB },
+  // Spreadsheets are judged by extension + content: browsers label .csv files inconsistently
+  // (Windows sends application/vnd.ms-excel, some send text/plain or nothing at all).
+  excel: {
+    mimes: [
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-excel',
+      'text/csv',
+      'application/csv',
+      'text/x-csv',
+      'text/comma-separated-values',
+      'text/plain',
+      'application/octet-stream',
+      '',
+    ],
+    extensions: { '.xlsx': ['zipOffice'], '.csv': ['text'], '.xls': ['ole'] },
+    maxSize: 20 * MB,
+  },
   chat: {
     mimes: [
       'image/jpeg',
@@ -50,8 +66,10 @@ export const UPLOAD_KINDS = {
   },
 };
 
-function verifySignature(file) {
-  const checks = MIME[file.mimetype] || [];
+const extOf = (name = '') => (String(name).match(/\.[a-z0-9]+$/i)?.[0] || '').toLowerCase();
+
+function verifySignature(file, cfg) {
+  const checks = (cfg.extensions ? cfg.extensions[extOf(file.originalname)] : MIME[file.mimetype]) || [];
   return checks.some((name) => SIGNATURES[name](file.buffer));
 }
 
@@ -65,7 +83,9 @@ export function upload(kind, field = 'file', { multiple = false, maxCount = 5, r
     storage: multer.memoryStorage(),
     limits: { fileSize: cfg.maxSize, files: multiple ? maxCount : 1, fields: 50 },
     fileFilter: (_req, file, cb) => {
-      if (!cfg.mimes.includes(file.mimetype)) return cb(ApiError.badRequest(`Unsupported file type ${file.mimetype}`, undefined, 'INVALID_FILE_TYPE'));
+      if (cfg.extensions && !cfg.extensions[extOf(file.originalname)])
+        return cb(ApiError.badRequest(`Unsupported file. Upload ${Object.keys(cfg.extensions).filter((e) => e !== '.xls').join(' or ')}`, undefined, 'INVALID_FILE_TYPE'));
+      if (!cfg.mimes.includes(file.mimetype || '')) return cb(ApiError.badRequest(`Unsupported file type ${file.mimetype}`, undefined, 'INVALID_FILE_TYPE'));
       cb(null, true);
     },
   });
@@ -85,7 +105,7 @@ export function upload(kind, field = 'file', { multiple = false, maxCount = 5, r
     const files = multiple ? req.files || [] : req.file ? [req.file] : [];
     if (required && !files.length) throw ApiError.badRequest(`File field "${field}" is required`, undefined, 'FILE_REQUIRED');
     for (const f of files) {
-      if (!verifySignature(f)) throw ApiError.badRequest(`File "${f.originalname}" content does not match its type`, undefined, 'INVALID_FILE_CONTENT');
+      if (!verifySignature(f, cfg)) throw ApiError.badRequest(`File "${f.originalname}" content does not match its type`, undefined, 'INVALID_FILE_CONTENT');
     }
     next();
   };

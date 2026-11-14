@@ -7,13 +7,21 @@ import { chatApi, notificationApi } from '../services';
 import useAuthStore from '../store/useAuthStore';
 
 let socket = null;
+let retried = false; // one refresh + retry per sign-in (see getSocket)
 
 /** One shared socket per tab. Websocket only: the API runs clustered without sticky polling. */
 export function getSocket() {
   if (!socket) {
     socket = io(SOCKET_URL, { path: '/socket.io', transports: ['websocket'], autoConnect: false, auth: (cb) => cb({ token: getAccessToken() }) });
+    // An expired token gets one refresh and one retry. If the fresh token is refused too (wrong
+    // socket URL, secret mismatch), stop: retrying would rotate the session in an endless loop.
+    // Live updates are then off until the next sign-in or reload; the rest of the app still works.
+    socket.on('connect', () => {
+      retried = false;
+    });
     socket.on('connect_error', async (e) => {
-      if (e.message !== 'UNAUTHORIZED') return;
+      if (e.message !== 'UNAUTHORIZED' || retried) return;
+      retried = true;
       try {
         await refreshSession();
         socket.connect();
@@ -32,6 +40,7 @@ export function useRealtimeSession() {
   useEffect(() => {
     if (!userId) return undefined;
     const s = getSocket();
+    retried = false;
     s.connect();
     const onNotification = (n) => {
       client.invalidateQueries({ queryKey: ['notifications'] });

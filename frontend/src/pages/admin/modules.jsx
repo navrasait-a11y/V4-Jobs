@@ -241,6 +241,7 @@ export const MODULES = {
     ],
     exportPath: '/candidates/export',
     importPath: '/candidates/import',
+    importTemplate: 'candidates',
     importModes: true,
     createFields: [
       { key: 'fullName', label: 'Full name', required: true },
@@ -290,6 +291,7 @@ export const MODULES = {
     ],
     exportPath: '/employers/export',
     importPath: '/employers/import',
+    importTemplate: 'employers',
     createFields: [
       { key: 'employerType', label: 'Employer', type: 'select', required: true, options: opt(['company', 'consultancy']) },
       { key: 'organizationName', label: 'Company / consultancy name', required: true },
@@ -386,6 +388,7 @@ export const MODULES = {
     bulk: { path: '/job-alerts/bulk', actions: [{ action: 'start', label: 'Start' }, { action: 'stop', label: 'Stop' }, { action: 'trash', label: 'Trash', danger: true }] },
     exportPath: '/job-alerts/export',
     importPath: '/job-alerts/import',
+    importTemplate: 'job-alerts',
     rowActions: (r) => <AlertJobs alert={r} />,
     editFields: [
       { key: 'name', label: 'Name' },
@@ -488,7 +491,7 @@ export const MODULES = {
     editFields: [{ key: 'status', label: 'Status', type: 'select', options: opt(['new', 'open', 'resolved', 'closed']) }],
   },
   'email-center': { title: 'Email Templates', path: '/cms/email-templates', columns: [{ key: 'name', header: 'Name' }, { key: 'subject', header: 'Subject' }, date('updatedAt', 'Updated')], createFields: templateFields, editFields: templateFields, remove: true, rowActions: (r) => <WithModal label="Send" render={(close) => <SendTemplate template={r} onClose={close} />} /> },
-  locations: { title: 'Locations', path: '/locations', timespan: false, columns: [{ key: 'city', header: 'City' }, { key: 'locality', header: 'Locality', render: (r) => r.locality || '—' }, { key: 'state', header: 'State' }, { key: 'popular', header: 'Popular', render: (r) => (r.isPopular ? 'Yes' : 'No') }], createFields: locationFields, editFields: locationFields, remove: true, exportPath: '/locations/export', importPath: '/locations/import' },
+  locations: { title: 'Locations', path: '/locations', timespan: false, columns: [{ key: 'city', header: 'City' }, { key: 'locality', header: 'Locality', render: (r) => r.locality || '—' }, { key: 'state', header: 'State' }, { key: 'popular', header: 'Popular', render: (r) => (r.isPopular ? 'Yes' : 'No') }], createFields: locationFields, editFields: locationFields, remove: true, exportPath: '/locations/export', importPath: '/locations/import', importTemplate: 'locations' },
   users: {
     title: 'Users',
     path: '/users',

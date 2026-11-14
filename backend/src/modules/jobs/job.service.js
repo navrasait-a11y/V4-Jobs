@@ -7,7 +7,7 @@ import { generateUid } from '../../shared/models/counter.model.js';
 import { uniqueSlug, escapeRegex, omit, normalizeMobile, toArray } from '../../shared/utils/helpers.js';
 import { sha256 } from '../../shared/utils/crypto.js';
 import { JobView } from './jobView.model.js';
-import { parseWorkbook } from '../../shared/utils/excel.js';
+import { cellList, cellNumber, employmentTypeList, parseWorkbook } from '../../shared/utils/excel.js';
 import { hasEmployerPermission, isAdmin } from '../../shared/middleware/auth.js';
 import Job from './job.model.js';
 import Organization from '../employers/organization.model.js';
@@ -657,11 +657,12 @@ export async function guestPostJob(req, { employer: { otp, ...employer }, job })
 
 /* -------------------------------------------------------- bulk Excel post */
 
-const JOB_HEADERS = {
+export const JOB_HEADERS = {
   'job title': 'title',
   title: 'title',
   designation: 'designation',
   description: 'description',
+  'job description': 'description',
   'key skills': 'keySkills',
   city: 'city',
   state: 'state',
@@ -676,18 +677,13 @@ const JOB_HEADERS = {
   department: 'departments',
   role: 'roles',
   kind: 'kind',
+  'job or internship': 'kind',
   'client name': 'clientName',
 };
 
 export async function bulkImportJobs(user, buffer, { orgId, publish = false, adminId } = {}) {
   const rows = await parseWorkbook(buffer, JOB_HEADERS, { maxRows: 500 });
-  const list = (v) =>
-    v
-      ? String(v)
-          .split(',')
-          .map((x) => x.trim())
-          .filter(Boolean)
-      : [];
+  const list = cellList;
   const results = { total: rows.length, created: 0, errors: [] };
   for (const row of rows) {
     try {
@@ -705,10 +701,10 @@ export async function bulkImportJobs(user, buffer, { orgId, publish = false, adm
           description: row.description || String(row.title),
           keySkills: list(row.keySkills),
           locations: [{ city: String(row.city), state: row.state ? String(row.state) : undefined }],
-          experience: { min: Number(row.expMin) || 0, max: row.expMax ? Number(row.expMax) : undefined },
-          salary: { min: row.salaryMin ? Number(row.salaryMin) : undefined, max: row.salaryMax ? Number(row.salaryMax) : undefined },
-          openings: Number(row.openings) || 1,
-          employmentTypes: list(row.employmentTypes),
+          experience: { min: cellNumber(row.expMin, 'Min Experience') || 0, max: cellNumber(row.expMax, 'Max Experience') },
+          salary: { min: cellNumber(row.salaryMin, 'Min Salary'), max: cellNumber(row.salaryMax, 'Max Salary') },
+          openings: cellNumber(row.openings, 'Openings') || 1,
+          employmentTypes: employmentTypeList(row.employmentTypes),
           jobModes: list(row.jobModes),
           industries: list(row.industries),
           departments: list(row.departments),

@@ -1,10 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { clsx } from 'clsx';
 import Button from '../ui/Button';
 import { DataTable, PageHeader, Pagination, SearchInput, SimpleSelect, Tabs } from '../ui/data';
-import { ConfirmDialog, Drawer, EmptyState, Icon, Modal } from '../ui/feedback';
+import { ConfirmDialog, Drawer, EmptyState, Icon } from '../ui/feedback';
 import { CheckboxField, ChoiceChips, Field, SelectField, TextAreaField, TextField } from '../ui/form';
 import { MediaField } from './AdminActions';
 import RichTextEditor from './LazyRichTextEditor';
@@ -12,6 +12,8 @@ import TimeRange, { rangeParams } from './TimeRange';
 import { useAction, useDocumentTitle, useLookups, useUrlFilters } from '../../hooks/useData';
 import useDebounce from '../../hooks/useDebounce';
 import { adminApi } from '../../services';
+import ImportDialog from '../common/ImportDialog';
+import { adminImportGuide } from '../common/importGuides';
 import { toInputDate, toInputDateTime } from '../../utils/format';
 
 const get = (obj, path) => path.split('.').reduce((o, k) => o?.[k], obj);
@@ -30,65 +32,8 @@ const setPath = (obj, path, value) => {
 const IMPORT_MODES = [
   { value: 'create', label: 'Add new only', hint: 'Skips rows whose mobile or e-mail already exists.' },
   { value: 'update', label: 'Add new and rewrite / update previous data', hint: 'Updates earlier Excel-imported users matched by mobile or e-mail.' },
-  { value: 'replace', label: 'Delete previous imported data, then add', hint: 'Removes earlier Excel-imported users who never logged in.' },
+  { value: 'replace', label: 'Delete previous imported data, then add', hint: 'Removes earlier Excel-imported users who never logged in.', danger: true },
 ];
-
-/** PRD bulk Excel upload: choose the mode and run a duplicate check (mobile / e-mail) before importing. */
-const ImportModal = ({ state, setState, path, onDone }) => {
-  const check = useAction(() => adminApi.upload(path, { file: state.file }, { mode: state.mode, dryRun: true }), { silent: true, onSuccess: (r) => setState((s) => ({ ...s, check: r })) });
-  const run = useAction(() => adminApi.upload(path, { file: state.file }, { mode: state.mode }), {
-    success: (r) => `Import finished: ${r.created || 0} added, ${r.updated || 0} updated, ${r.skipped || 0} skipped${r.errors?.length ? `, ${r.errors.length} errors` : ''}`,
-    onSuccess: onDone,
-  });
-  const c = state.check;
-  return (
-    <Modal
-      open
-      onClose={() => setState(null)}
-      title="Import from Excel"
-      subtitle={state.file.name}
-      footer={
-        <>
-          <Button size="sm" variant="outline" loading={check.isPending} onClick={() => check.mutate()}>
-            Check duplicates
-          </Button>
-          <Button size="sm" variant={state.mode === 'replace' ? 'danger' : 'primaryBlue'} loading={run.isPending} onClick={() => run.mutate()}>
-            Import
-          </Button>
-        </>
-      }
-    >
-      <div className="space-y-2">
-        {IMPORT_MODES.map((m) => (
-          <label key={m.value} className="flex cursor-pointer items-start gap-2 rounded-lg border border-brand-border p-3 text-sm">
-            <input type="radio" name="import-mode" checked={state.mode === m.value} onChange={() => setState((s) => ({ ...s, mode: m.value }))} className="mt-0.5" />
-            <span>
-              <span className="block font-medium text-brand-dark">{m.label}</span>
-              <span className="text-xs text-brand-gray-muted">{m.hint}</span>
-            </span>
-          </label>
-        ))}
-        {c && (
-          <div className="rounded-lg bg-brand-tint p-3 text-sm text-brand-dark">
-            <p>
-              <b>{c.total}</b> rows · <b>{c.duplicatesInFile?.length || 0}</b> duplicates inside the file · <b>{c.existingInDatabase?.length || 0}</b> already in the database
-            </p>
-            {(c.duplicatesInFile || []).slice(0, 5).map((d) => (
-              <p key={`f${d.row}`} className="text-xs text-brand-gray">
-                Row {d.row} repeats row {d.duplicateOf} ({d.value})
-              </p>
-            ))}
-            {(c.existingInDatabase || []).slice(0, 5).map((d) => (
-              <p key={`d${d.row}`} className="text-xs text-brand-gray">
-                Row {d.row} exists: {d.mobile || d.email}
-              </p>
-            ))}
-          </div>
-        )}
-      </div>
-    </Modal>
-  );
-};
 
 /** Bulk action that needs a value: add / remove a label, set a situation tag. */
 const BulkPicker = ({ picker, onPick, disabled }) => {
@@ -260,7 +205,7 @@ const StatTiles = ({ stats, filters, setFilters }) => {
 };
 
 const ResourcePage = ({ config }) => {
-  const { title, subtitle, path: rawPath, columns, tabs, stats, filters: filterDefs = [], search = true, searchPlaceholder = 'Search by name, e-mail, mobile or ID', timespan = true, bulk, exportPath, downloads = [], importPath, importModes, createFields, createLink, editFields, editLabel = 'Edit', rowActions, onRowClick, rowLink, params: fixed, remove, headerActions } = config;
+  const { title, subtitle, path: rawPath, columns, tabs, stats, filters: filterDefs = [], search = true, searchPlaceholder = 'Search by name, e-mail, mobile or ID', timespan = true, bulk, exportPath, downloads = [], importPath, importModes, importTemplate, createFields, createLink, editFields, editLabel = 'Edit', rowActions, onRowClick, rowLink, params: fixed, remove, headerActions } = config;
   const navigate = useNavigate();
   useDocumentTitle(title);
   const [path] = rawPath.split('?');
@@ -278,7 +223,6 @@ const ResourcePage = ({ config }) => {
     }
   }, [filters.create]); // eslint-disable-line react-hooks/exhaustive-deps
   const [confirm, setConfirm] = useState(null);
-  const fileRef = useRef(null);
   const debounced = useDebounce(q, 400);
   useEffect(() => {
     if (debounced !== (filters.q || '')) setFilters({ q: debounced });
@@ -312,8 +256,7 @@ const ResourcePage = ({ config }) => {
     },
     { success: 'Download started' },
   );
-  const [importing, setImporting] = useState(null); // modes: { file, mode, check }
-  const doImport = useAction((file) => adminApi.upload(importPath, { file }), { ...inv, success: (r) => `Import finished${r?.created !== undefined ? `: ${r.created} added, ${r.updated || 0} updated, ${r.skipped || 0} skipped` : ''}` });
+  const [importing, setImporting] = useState(false);
   const helpers = { edit: setEditing, confirm: setConfirm, refresh: () => query.refetch() };
 
   return (
@@ -325,24 +268,9 @@ const ResourcePage = ({ config }) => {
           <>
             {headerActions}
             {importPath && (
-              <>
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept=".xlsx,.xls,.csv"
-                  hidden
-                  onChange={(e) => {
-                    if (e.target.files?.[0]) {
-                      if (importModes) setImporting({ file: e.target.files[0], mode: 'create', check: null });
-                      else doImport.mutate(e.target.files[0]);
-                    }
-                    e.target.value = '';
-                  }}
-                />
-                <Button size="sm" variant="outline" leftIcon={<Icon name="upload" size={16} />} loading={doImport.isPending} onClick={() => fileRef.current?.click()}>
-                  Import
-                </Button>
-              </>
+              <Button size="sm" variant="outline" leftIcon={<Icon name="upload" size={16} />} onClick={() => setImporting(true)}>
+                Import
+              </Button>
             )}
             {exportPath && (
               <Button size="sm" variant="outline" leftIcon={<Icon name="download" size={16} />} loading={doExport.isPending} onClick={() => doExport.mutate()}>
@@ -451,7 +379,18 @@ const ResourcePage = ({ config }) => {
           onSubmit={(body) => (editing._id ? adminApi.patch(`${path}/${editing._id}`, body) : adminApi.post(path, body))}
         />
       )}
-      {importing && <ImportModal state={importing} setState={setImporting} path={importPath} onDone={() => { setImporting(null); query.refetch(); }} />}
+      {importPath && (
+        <ImportDialog
+          open={importing}
+          onClose={() => setImporting(false)}
+          title={`Import ${title.toLowerCase()}`}
+          description="Excel (.xlsx) or CSV file"
+          guide={adminImportGuide(importTemplate)}
+          modes={importModes ? IMPORT_MODES : undefined}
+          onImport={(file, { mode, dryRun }) => adminApi.upload(importPath, { file }, importModes ? { mode, ...(dryRun ? { dryRun: true } : {}) } : undefined)}
+          onDone={() => query.refetch()}
+        />
+      )}
       <ConfirmDialog
         open={Boolean(confirm)}
         onClose={() => setConfirm(null)}
