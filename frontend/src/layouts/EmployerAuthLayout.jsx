@@ -1,5 +1,6 @@
 import React from 'react';
 import { Outlet } from 'react-router-dom';
+import RouteSuspense from '../components/common/RouteSuspense';
 import EmployerAuthNavbar from '../components/employer/EmployerAuthNavbar';
 import EmployerAuthFooter from '../components/employer/EmployerAuthFooter';
 
@@ -12,7 +13,9 @@ const EmployerAuthLayout = () => {
     <div>
       <EmployerAuthNavbar />
       <main className="pt-[80px]">
-        <Outlet />
+        <RouteSuspense className="min-h-[60vh]">
+          <Outlet />
+        </RouteSuspense>
       </main>
       <EmployerAuthFooter />
     </div>

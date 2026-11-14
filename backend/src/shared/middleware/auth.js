@@ -82,6 +82,15 @@ export const authorize =
 
 export const isAdmin = (user) => ADMIN_ROLES.includes(user?.role);
 
+/**
+ * Admin "login as" sessions can view and correct an account, but never change how the owner signs
+ * in, pay with their money or delete the account.
+ */
+export function forbidImpersonation(req, _res, next) {
+  if (req.auth?.impersonatedBy) throw ApiError.forbidden('Not allowed while logged in as this user from the admin panel', 'IMPERSONATION_FORBIDDEN');
+  next();
+}
+
 /** Admin sub-permission check. Super admins and admins without an explicit list have full access. */
 export const requireAdminPermission = (permission) => (req, _res, next) => {
   if (!isAdmin(req.user)) throw ApiError.forbidden();

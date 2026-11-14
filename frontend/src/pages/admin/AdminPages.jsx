@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import { MODULES } from './modules';
 import ResourcePage from '../../components/admin/ResourcePage';
 import { MediaField } from '../../components/admin/AdminActions';
-import RichTextEditor from '../../components/admin/RichTextEditor';
+import RichTextEditor from '../../components/admin/LazyRichTextEditor';
 import AccountSecurity from '../../components/shared/AccountSecurity';
 import Button from '../../components/ui/Button';
 import { DataTable, PageHeader, Pagination, SearchInput, Section, SimpleSelect } from '../../components/ui/data';

@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { BrowserRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'react-hot-toast';
-import AppRoutes from './routes/AppRoutes';
+import AppRoutes, { preloadPanel } from './routes/AppRoutes';
 import HelpChatWidget from './components/common/HelpChatWidget';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import ScrollToTop from './components/common/ScrollToTop';
@@ -23,9 +23,14 @@ const queryClient = new QueryClient({
 
 function App() {
   const bootstrap = useAuthStore((s) => s.bootstrap);
+  const role = useAuthStore((s) => s.user?.role);
   useEffect(() => {
     bootstrap();
   }, [bootstrap]);
+  // Signed in: fetch the rest of this panel's pages in the background so sidebar clicks open at once.
+  useEffect(() => {
+    if (role) preloadPanel(role);
+  }, [role]);
 
   return (
     <ErrorBoundary>

@@ -53,7 +53,7 @@ publicJobs.post('/guest-post/otp', otpLimiter, validate({ body: Joi.object({ mob
 );
 publicJobs.post('/guest-post', formLimiter, validate(v.guestPost), async (req, res) => created(res, await s.guestPostJob(req, req.body), 'Job submitted'));
 publicJobs.get('/:idOrSlug', optionalAuth, validate({ params: Joi.object({ idOrSlug: Joi.string().max(200).required() }) }), async (req, res) =>
-  ok(res, await s.getPublicJob(req.params.idOrSlug, req.user)),
+  ok(res, await s.getPublicJob(req.params.idOrSlug, req.user, { ip: req.ip, userAgent: req.get('user-agent') })),
 );
 publicJobs.get('/:idOrSlug/google-jobs', validate({ params: Joi.object({ idOrSlug: Joi.string().max(200).required() }) }), async (req, res) =>
   ok(res, await s.googleJobPosting(req.params.idOrSlug)),

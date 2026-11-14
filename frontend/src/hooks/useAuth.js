@@ -4,10 +4,11 @@ const useAuth = () => {
   const user = useAuthStore((s) => s.user);
   const organization = useAuthStore((s) => s.organization);
   const profile = useAuthStore((s) => s.profile);
+  const impersonatedBy = useAuthStore((s) => s.impersonatedBy);
   const logout = useAuthStore((s) => s.logout);
   const setSession = useAuthStore((s) => s.setSession);
   const loadMe = useAuthStore((s) => s.loadMe);
-  return { user, organization, profile, logout, setSession, loadMe, isAuthenticated: Boolean(user) };
+  return { user, organization, profile, impersonatedBy, logout, setSession, loadMe, isAuthenticated: Boolean(user) };
 };
 
 export default useAuth;

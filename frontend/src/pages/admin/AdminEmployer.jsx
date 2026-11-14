@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import toast from 'react-hot-toast';
 import AccountPanel, { EMPLOYER_LABELS } from '../../components/admin/AccountPanel';
 import { MediaField, PlanAndWallet } from '../../components/admin/AdminActions';
 import UserActivity from '../../components/admin/UserActivity';
@@ -15,6 +14,7 @@ import { useAction, useDocumentTitle, useLookups } from '../../hooks/useData';
 import { DuplicateEmployer } from './AdminPages';
 import { MemberModal } from '../employer/Employees';
 import { adminApi } from '../../services';
+import { loginAs } from '../../components/admin/loginAs';
 import { gstinHint } from '../../utils/gstin';
 import { formatDate, formatDateTime, formatNumber, timeAgo, titleCase, toInputDate } from '../../utils/format';
 
@@ -25,14 +25,6 @@ const opts = (list) => list.map((v) => ({ value: v, label: titleCase(v) }));
 const TABS = ['company', 'team', 'jobs', 'kyc', 'billing', 'usage', 'notes', 'activity'];
 const TAB_LABELS = { company: 'Company profile', team: 'Owner & team', jobs: 'Jobs', kyc: 'KYC documents', billing: 'Packages & credits', usage: 'Usage report', notes: 'Notes', activity: 'Activity' };
 
-const loginAs = async (userId) => {
-  try {
-    const data = await adminApi.post(`/users/${userId}/impersonate`);
-    window.open(`/impersonate#${encodeURIComponent(data.tokens.accessToken)}`, '_blank', 'noopener');
-  } catch (e) {
-    toast.error(e.message);
-  }
-};
 
 const orgForm = (o) => ({
   type: o.type || 'company',
@@ -260,7 +252,7 @@ const Team = ({ org, members, onChanged }) => {
                   Role & limits
                 </Button>
               )}
-              <Button size="sm" variant="ghost" onClick={() => loginAs(m._id)}>
+              <Button size="sm" variant="ghost" onClick={() => loginAs(m._id, m.fullName)}>
                 Login as
               </Button>
             </>
@@ -516,11 +508,12 @@ const AdminEmployer = () => {
         <Icon name="arrow_back" size={16} /> Employers
       </Link>
       <div className="surface overflow-hidden">
-        <div className="h-24 bg-cover bg-center" style={{ backgroundImage: org.coverPhoto?.url ? `url(${org.coverPhoto.url})` : 'linear-gradient(90deg,#0A6CB5,#4F8FD6)' }} />
-        <div className="-mt-9 flex flex-col gap-4 px-5 pb-5 lg:flex-row lg:items-end">
-          <Avatar name={org.name} src={org.logo?.url} size={84} square className="bg-white ring-4 ring-white" />
-          <div className="min-w-0 flex-1">
-            <h1 className="flex flex-wrap items-center gap-2 text-xl font-bold text-brand-dark">
+        <div className="h-20 bg-cover bg-center sm:h-28" style={{ backgroundImage: org.coverPhoto?.url ? `url(${org.coverPhoto.url})` : 'linear-gradient(90deg,#0A4F8C,#0A6CB5,#4F8FD6)' }} aria-hidden="true" />
+        {/* Only the logo overlaps the cover; the name and details always sit on the white card. */}
+        <div className="flex flex-col gap-3 px-4 pb-5 sm:px-5 lg:flex-row lg:items-start lg:gap-5">
+          <Avatar name={org.name} src={org.logo?.url} size={96} square className="relative z-10 -mt-12 shrink-0 bg-white shadow-md ring-4 ring-white" />
+          <div className="min-w-0 flex-1 lg:pt-3">
+            <h1 className="flex flex-wrap items-center gap-x-2 gap-y-1 break-words text-xl font-bold leading-tight text-brand-dark sm:text-2xl">
               {org.name}
               {org.isVerified && <Icon name="verified" size={18} fill className="text-brand-green" />}
               <StatusBadge status={org.status} />
@@ -538,8 +531,8 @@ const AdminEmployer = () => {
               {org.situationTag && <Badge tone="purple">{org.situationTag}</Badge>}
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {ownerId && <Button size="sm" variant="primaryBlue" leftIcon={<Icon name="login" size={16} />} onClick={() => loginAs(ownerId)}>Login as employer</Button>}
+          <div className="flex flex-wrap gap-2 lg:max-w-[46%] lg:justify-end lg:pt-3">
+            {ownerId && <Button size="sm" variant="primaryBlue" leftIcon={<Icon name="login" size={16} />} onClick={() => loginAs(ownerId, owner.fullName || org.name)}>Login as employer</Button>}
             {ownerId && <Button size="sm" variant="outline" loading={link.isPending} onClick={() => link.mutate({ userId: ownerId, type: 'activation' })}>Activation link</Button>}
             {ownerId && <Button size="sm" variant="outline" loading={link.isPending} onClick={() => link.mutate({ userId: ownerId, type: 'password_reset' })}>Password reset link</Button>}
             {org.status !== 'active' && !blocked && <Button size="sm" variant="primary" onClick={() => setConfirm('approve')}>Approve</Button>}

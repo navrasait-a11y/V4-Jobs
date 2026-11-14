@@ -7,7 +7,7 @@ import { DataTable, PageHeader, Pagination, SearchInput, SimpleSelect, Tabs } fr
 import { ConfirmDialog, Drawer, EmptyState, Icon, Modal } from '../ui/feedback';
 import { CheckboxField, ChoiceChips, Field, SelectField, TextAreaField, TextField } from '../ui/form';
 import { MediaField } from './AdminActions';
-import RichTextEditor from './RichTextEditor';
+import RichTextEditor from './LazyRichTextEditor';
 import TimeRange, { rangeParams } from './TimeRange';
 import { useAction, useDocumentTitle, useLookups, useUrlFilters } from '../../hooks/useData';
 import useDebounce from '../../hooks/useDebounce';

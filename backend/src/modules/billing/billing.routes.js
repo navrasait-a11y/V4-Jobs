@@ -2,7 +2,7 @@ import { Router } from 'express';
 import Joi from 'joi';
 import { gstinSchema } from '../../shared/utils/gstin.js';
 import validate from '../../shared/middleware/validate.js';
-import { authenticate, optionalAuth, requireAdminPermission } from '../../shared/middleware/auth.js';
+import { authenticate, optionalAuth, requireAdminPermission, forbidImpersonation } from '../../shared/middleware/auth.js';
 import { ok, created, paginated } from '../../shared/http/response.js';
 import { objectId, idParam, pagination, timespan, exportFormat } from '../../shared/validators/common.js';
 import { parsePagination } from '../../shared/utils/pagination.js';
@@ -41,7 +41,7 @@ export const router = Router();
 router.get('/plans', optionalAuth, validate({ query: Joi.object({ audience: Joi.string().valid('employer', 'candidate') }) }), c.plans);
 router.use(authenticate);
 router.post('/quote', validate({ body: checkoutBody }), c.quote);
-router.post('/checkout', validate({ body: checkoutBody }), c.checkout);
+router.post('/checkout', forbidImpersonation, validate({ body: checkoutBody }), c.checkout);
 router.post(
   '/verify',
   validate({
@@ -63,7 +63,7 @@ router.get(
 );
 router.get('/invoices/:id', validate({ params: idParam, query: Joi.object({ format: Joi.string().valid('json', 'html', 'pdf') }) }), c.invoice);
 router.get('/wallet', validate({ query: Joi.object(pagination) }), c.wallet);
-router.post('/wallet/topup', validate({ body: Joi.object({ amount: Joi.number().positive().precision(2).max(1000000).required() }) }), c.walletTopup);
+router.post('/wallet/topup', forbidImpersonation, validate({ body: Joi.object({ amount: Joi.number().positive().precision(2).max(1000000).required() }) }), c.walletTopup);
 
 /* ------------------------------------------------------------------ admin */
 

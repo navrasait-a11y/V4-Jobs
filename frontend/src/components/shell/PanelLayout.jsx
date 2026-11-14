@@ -4,6 +4,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { clsx } from 'clsx';
 import toast from 'react-hot-toast';
 import Logo from '../common/Logo';
+import RouteSuspense from '../common/RouteSuspense';
+import { getImpersonation } from '../../utils/impersonation';
 import { Avatar } from '../ui/data';
 import { Icon } from '../ui/feedback';
 import useAuth, { useCan } from '../../hooks/useAuth';
@@ -169,7 +171,6 @@ const PanelLayout = ({ nav, role, sidebarHeader, sidebarFooter, topLinks = [], t
       return !c;
     });
   const location = useLocation();
-  const navigate = useNavigate();
   const { notifications, unread, chatUnread } = useBadges();
   useRealtimeSession();
   // Browser push: re-sync the token on every visit once the user has allowed notifications.
@@ -209,16 +210,13 @@ const PanelLayout = ({ nav, role, sidebarHeader, sidebarFooter, topLinks = [], t
 
       <div className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden">
         {impersonatedBy && (
-          <div className="flex items-center justify-between gap-3 bg-brand-orange px-4 py-1.5 text-xs font-semibold text-white">
-            <span>You are viewing this account as an admin</span>
-            <button
-              className="underline"
-              onClick={async () => {
-                await logout();
-                navigate('/admin/login');
-              }}
-            >
-              End session
+          <div role="status" className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 bg-brand-orange px-4 py-1.5 text-xs font-semibold text-white">
+            <span className="flex items-center gap-1.5">
+              <Icon name="admin_panel_settings" size={16} />
+              Admin view: you are signed in as {user.fullName || 'this user'}. Password, payments and account deletion are disabled.
+            </span>
+            <button type="button" className="rounded px-2 py-0.5 underline hover:bg-white/15" onClick={() => logout()}>
+              {getImpersonation()?.sameTab ? 'End session and return to admin panel' : 'End session and close tab'}
             </button>
           </div>
         )}
@@ -252,7 +250,9 @@ const PanelLayout = ({ nav, role, sidebarHeader, sidebarFooter, topLinks = [], t
         {banner}
         <main id="panel-main" className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4 lg:p-6">
           <div className="mx-auto max-w-[1400px]">
-            <Outlet />
+            <RouteSuspense>
+              <Outlet />
+            </RouteSuspense>
           </div>
         </main>
       </div>

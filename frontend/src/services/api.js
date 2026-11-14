@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getImpersonation, isImpersonationTab, saveImpersonation } from '../utils/impersonation';
 
 export const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1').replace(/\/$/, '');
 export const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || API_URL.replace(/\/api\/v\d+$/, '');
@@ -11,6 +12,8 @@ let onSessionExpired = () => {};
 
 export const setAccessToken = (token) => {
   accessToken = token;
+  // A "login as" tab keeps its session to itself; the shared hint belongs to the admin's own login.
+  if (isImpersonationTab()) return;
   try {
     if (token) localStorage.setItem(SESSION_FLAG, '1');
     else localStorage.removeItem(SESSION_FLAG);
@@ -95,10 +98,14 @@ let refreshing = null;
 /** Single-flight refresh: concurrent 401s wait for one rotation (old tokens are single use). */
 export function refreshSession() {
   if (!refreshing) {
+    // "Login as" tab: refresh with its own token in the body and never touch the admin's cookie.
+    const own = getImpersonation()?.refreshToken;
     refreshing = axios
-      .post(`${API_URL}/auth/refresh`, {}, { withCredentials: true, headers: clientHeaders(), timeout: 15000 })
+      .post(`${API_URL}/auth/refresh`, own ? { refreshToken: own } : {}, { withCredentials: !own, headers: clientHeaders(), timeout: 15000 })
       .then((res) => {
-        setAccessToken(res.data.data.tokens.accessToken);
+        const { tokens } = res.data.data;
+        if (own) saveImpersonation({ refreshToken: tokens.refreshToken });
+        setAccessToken(tokens.accessToken);
         return accessToken;
       })
       .finally(() => {

@@ -1,8 +1,9 @@
 import React, { Suspense, lazy as reactLazy } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import PublicLayout from '../layouts/PublicLayout';
 import EmployerAuthLayout from '../layouts/EmployerAuthLayout';
 import ProtectedRoute from './ProtectedRoute';
+import { PageLoader } from '../components/ui/feedback';
 
 /** After a deploy, old tabs ask for chunks that no longer exist. Reload once to get the new build. */
 const lazy = (loader) =>
@@ -18,54 +19,82 @@ const lazy = (loader) =>
 
 const named = (loader, name) => lazy(() => loader().then((m) => ({ default: m[name] })));
 
-const CandidateLayout = lazy(() => import('../layouts/CandidateLayout'));
-const EmployerLayout = lazy(() => import('../layouts/EmployerLayout'));
-const AdminLayout = lazy(() => import('../layouts/AdminLayout'));
+/** Page loaders by area, so the pages a user is likely to open next can be fetched ahead of time. */
+const GROUPS = { public: [], shared: [], candidate: [], employer: [], admin: [] };
+function group(name, loader) {
+  GROUPS[name].push(loader);
+  return loader;
+}
 
-const Home = lazy(() => import('../pages/public/Home'));
-const Login = lazy(() => import('../pages/public/Login'));
-const Register = lazy(() => import('../pages/public/Register'));
-const recovery = () => import('../pages/public/AccountRecovery');
+/**
+ * After sign-in, when the browser is idle, download the code of every page of that panel so a click
+ * in the sidebar opens instantly. Skipped on "data saver" connections; failures are ignored (the
+ * page then simply loads on click as before).
+ */
+export function preloadPanel(role) {
+  if (typeof window === 'undefined') return;
+  if (navigator.connection?.saveData || /2g/.test(navigator.connection?.effectiveType || '')) return;
+  const area = ['admin', 'super_admin'].includes(role) ? 'admin' : role === 'employer' ? 'employer' : role === 'candidate' ? 'candidate' : null;
+  if (!area) return;
+  const loaders = [...GROUPS[area], ...(area === 'admin' ? [] : GROUPS.shared)];
+  const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 1500));
+  let i = 0;
+  // One file at a time while idle, so preloading never competes with what the user is doing.
+  const next = () => {
+    if (i >= loaders.length) return;
+    loaders[i++]().catch(() => {}).finally(() => idle(next));
+  };
+  idle(next);
+}
+
+const CandidateLayout = lazy(group('candidate', () => import('../layouts/CandidateLayout')));
+const EmployerLayout = lazy(group('employer', () => import('../layouts/EmployerLayout')));
+const AdminLayout = lazy(group('admin', () => import('../layouts/AdminLayout')));
+
+const Home = lazy(group('public', () => import('../pages/public/Home')));
+const Login = lazy(group('public', () => import('../pages/public/Login')));
+const Register = lazy(group('public', () => import('../pages/public/Register')));
+const recovery = group('public', () => import('../pages/public/AccountRecovery'));
 const ForgotPassword = named(recovery, 'ForgotPassword');
 const ResetPassword = named(recovery, 'ResetPassword');
 const VerifyEmail = named(recovery, 'VerifyEmail');
-const JobListing = lazy(() => import('../pages/public/JobListing'));
-const JobDetails = lazy(() => import('../pages/public/JobDetails'));
-const Companies = lazy(() => import('../pages/public/Companies'));
-const CompanyDetails = lazy(() => import('../pages/public/CompanyDetails'));
-const advice = () => import('../pages/public/CareerAdvice');
+const JobListing = lazy(group('public', () => import('../pages/public/JobListing')));
+const JobDetails = lazy(group('public', () => import('../pages/public/JobDetails')));
+const Companies = lazy(group('public', () => import('../pages/public/Companies')));
+const CompanyDetails = lazy(group('public', () => import('../pages/public/CompanyDetails')));
+const advice = group('public', () => import('../pages/public/CareerAdvice'));
 const CareerAdvice = named(advice, 'CareerAdvice');
 const CareerAdviceDetail = named(advice, 'CareerAdviceDetail');
-const HelpCenter = lazy(() => import('../pages/public/HelpCenter'));
-const CmsPage = lazy(() => import('../pages/public/CmsPage'));
-const events = () => import('../pages/public/Events');
+const HelpCenter = lazy(group('public', () => import('../pages/public/HelpCenter')));
+const CmsPage = lazy(group('public', () => import('../pages/public/CmsPage')));
+const events = group('public', () => import('../pages/public/Events'));
 const Events = named(events, 'Events');
 const EventDetails = named(events, 'EventDetails');
-const GuestJobAlert = lazy(() => import('../pages/public/GuestJobAlert'));
-const EmployerLogin = lazy(() => import('../pages/public/EmployerLogin'));
-const EmployerRegister = lazy(() => import('../pages/public/EmployerRegister'));
-const EmployerLanding = lazy(() => import('../pages/public/EmployerLanding'));
-const AdminLogin = lazy(() => import('../pages/public/AdminLogin'));
-const AdminPostJob = lazy(() => import('../pages/admin/AdminPostJob'));
-const SystemHealth = lazy(() => import('../pages/admin/SystemHealth'));
-const RiskSignals = lazy(() => import('../pages/admin/RiskSignals'));
-const SearchInsights = lazy(() => import('../pages/admin/SearchInsights'));
-const AdminJobEdit = lazy(() => import('../pages/admin/AdminJobEdit'));
-const ContentEditor = lazy(() => import('../pages/admin/ContentEditor'));
-const PostJobGuest = lazy(() => import('../pages/public/PostJobGuest'));
-const NotFound = lazy(() => import('../pages/public/NotFound'));
-const SeoLanding = lazy(() => import('../pages/public/SeoLanding'));
+const GuestJobAlert = lazy(group('public', () => import('../pages/public/GuestJobAlert')));
+const EmployerLogin = lazy(group('public', () => import('../pages/public/EmployerLogin')));
+const EmployerRegister = lazy(group('public', () => import('../pages/public/EmployerRegister')));
+const EmployerLanding = lazy(group('public', () => import('../pages/public/EmployerLanding')));
+const AdminLogin = lazy(group('public', () => import('../pages/public/AdminLogin')));
+const AdminPostJob = lazy(group('admin', () => import('../pages/admin/AdminPostJob')));
+const SystemHealth = lazy(group('admin', () => import('../pages/admin/SystemHealth')));
+const RiskSignals = lazy(group('admin', () => import('../pages/admin/RiskSignals')));
+const SearchInsights = lazy(group('admin', () => import('../pages/admin/SearchInsights')));
+const AdminJobEdit = lazy(group('admin', () => import('../pages/admin/AdminJobEdit')));
+const ContentEditor = lazy(group('admin', () => import('../pages/admin/ContentEditor')));
+const PostJobGuest = lazy(group('public', () => import('../pages/public/PostJobGuest')));
+const NotFound = lazy(group('public', () => import('../pages/public/NotFound')));
+const SeoLanding = lazy(group('public', () => import('../pages/public/SeoLanding')));
 
-const Notifications = lazy(() => import('../pages/shared/Notifications'));
-const Messages = lazy(() => import('../pages/shared/Messages'));
-const Mailbox = lazy(() => import('../pages/shared/Mailbox'));
+const Notifications = lazy(group('shared', () => import('../pages/shared/Notifications')));
+const Messages = lazy(group('shared', () => import('../pages/shared/Messages')));
+const Mailbox = lazy(group('shared', () => import('../pages/shared/Mailbox')));
 
-const profile = () => import('../pages/candidate/Profile');
-const apps = () => import('../pages/candidate/Applications');
-const lists = () => import('../pages/candidate/JobLists');
-const grow = () => import('../pages/candidate/Grow');
-const CandidateDashboard = lazy(() => import('../pages/candidate/Dashboard'));
-const ProfileViews = lazy(() => import('../pages/candidate/ProfileViews'));
+const profile = group('candidate', () => import('../pages/candidate/Profile'));
+const apps = group('candidate', () => import('../pages/candidate/Applications'));
+const lists = group('candidate', () => import('../pages/candidate/JobLists'));
+const grow = group('candidate', () => import('../pages/candidate/Grow'));
+const CandidateDashboard = lazy(group('candidate', () => import('../pages/candidate/Dashboard')));
+const ProfileViews = lazy(group('candidate', () => import('../pages/candidate/ProfileViews')));
 const CandidateProfile = lazy(profile);
 const CompleteProfile = named(profile, 'CompleteProfile');
 const CandidateApplications = named(apps, 'Applications');
@@ -75,52 +104,65 @@ const Following = named(lists, 'Following');
 const JobInvites = named(lists, 'JobInvites');
 const CandidateInterviews = named(lists, 'CandidateInterviews');
 const JobAlerts = named(lists, 'JobAlerts');
-const CandidateSettings = lazy(() => import('../pages/candidate/Settings'));
+const CandidateSettings = lazy(group('candidate', () => import('../pages/candidate/Settings')));
 const CandidateBilling = named(grow, 'CandidateBilling');
 const CandidateAnalytics = named(grow, 'CandidateAnalytics');
-const ResumeBuilder = lazy(() => import('../pages/candidate/ResumeBuilder'));
+const ResumeBuilder = lazy(group('candidate', () => import('../pages/candidate/ResumeBuilder')));
 
-const empApps = () => import('../pages/employer/Applications');
-const empCandidates = () => import('../pages/employer/Candidates');
-const insights = () => import('../pages/employer/Insights');
-const EmployerDashboard = lazy(() => import('../pages/employer/Dashboard'));
-const EmployerJobs = lazy(() => import('../pages/employer/Jobs'));
-const PostJob = lazy(() => import('../pages/employer/PostJob'));
+const empApps = group('employer', () => import('../pages/employer/Applications'));
+const empCandidates = group('employer', () => import('../pages/employer/Candidates'));
+const insights = group('employer', () => import('../pages/employer/Insights'));
+const EmployerDashboard = lazy(group('employer', () => import('../pages/employer/Dashboard')));
+const EmployerJobs = lazy(group('employer', () => import('../pages/employer/Jobs')));
+const PostJob = lazy(group('employer', () => import('../pages/employer/PostJob')));
 const EmployerApplications = named(empApps, 'Applications');
 const ApplicationDetail = named(empApps, 'ApplicationDetail');
 const ATS = named(empApps, 'ATS');
 const EmployerInterviews = named(empApps, 'Interviews');
 const Candidates = lazy(empCandidates);
 const CandidateResumeDetail = named(empCandidates, 'CandidateResumeDetail');
-const SavedSearches = lazy(() => import('../pages/employer/SavedSearches'));
-const FolderPage = lazy(() => import('../pages/employer/Folders'));
-const EmployerEvents = lazy(() => import('../pages/employer/Events'));
-const Employees = lazy(() => import('../pages/employer/Employees'));
+const SavedSearches = lazy(group('employer', () => import('../pages/employer/SavedSearches')));
+const FolderPage = lazy(group('employer', () => import('../pages/employer/Folders')));
+const EmployerEvents = lazy(group('employer', () => import('../pages/employer/Events')));
+const Employees = lazy(group('employer', () => import('../pages/employer/Employees')));
 const EmployerAnalytics = named(insights, 'Analytics');
 const Reports = named(insights, 'Reports');
 const PackagesBilling = named(insights, 'PackagesBilling');
 const Enquiries = named(insights, 'Enquiries');
-const EmployerSettings = lazy(() => import('../pages/employer/Settings'));
+const EmployerSettings = lazy(group('employer', () => import('../pages/employer/Settings')));
 
-const adminPages = () => import('../pages/admin/AdminPages');
-const Impersonate = lazy(() => import('../pages/public/Impersonate'));
-const Overview = lazy(() => import('../pages/admin/AdminOverview'));
-const AdminAnalytics = lazy(() => import('../pages/admin/AdminAnalytics'));
-const AdminCandidateDetail = lazy(() => import('../pages/admin/AdminCandidate'));
-const AdminEmployerDetail = lazy(() => import('../pages/admin/AdminEmployer'));
+const adminPages = group('admin', () => import('../pages/admin/AdminPages'));
+const Impersonate = lazy(group('public', () => import('../pages/public/Impersonate')));
+const Overview = lazy(group('admin', () => import('../pages/admin/AdminOverview')));
+const AdminAnalytics = lazy(group('admin', () => import('../pages/admin/AdminAnalytics')));
+const AdminCandidateDetail = lazy(group('admin', () => import('../pages/admin/AdminCandidate')));
+const AdminEmployerDetail = lazy(group('admin', () => import('../pages/admin/AdminEmployer')));
 const KycQueue = named(adminPages, 'KycQueue');
 const Taxonomy = named(adminPages, 'Taxonomy');
 const SupportChat = named(adminPages, 'SupportChat');
 const Communications = named(adminPages, 'Communications');
-const AdminSettings = lazy(() => import('../pages/admin/AdminSettings'));
+const AdminSettings = lazy(group('admin', () => import('../pages/admin/AdminSettings')));
 const AdminProfile = named(adminPages, 'AdminProfile');
 const AdminModule = named(adminPages, 'AdminModule');
 const MediaLibrary = named(adminPages, 'MediaLibrary');
 
 const ADMIN_MODULES = ['candidates', 'employers', 'jobs', 'responses', 'job-alerts', 'moderation', 'comments', 'blocklist', 'plans', 'coupons', 'orders', 'wallet', 'subscriptions', 'sales-leads', 'cms', 'career-advice', 'faqs', 'ads', 'contacts', 'email-center', 'locations', 'users', 'roles', 'login-audit', 'message-logs', 'sms-logs', 'security'];
 
-const AppRoutes = () => (
-  <Suspense fallback={<div className="route-progress" />}>
+/** Which top-level area a path belongs to; a new area gets a fresh loading boundary. */
+const areaOf = (path) => (/^\/(admin|employer|candidate)(?:\/(?!login$|register$)|$)/.exec(path)?.[1] || 'public');
+
+const AppRoutes = () => {
+  const { pathname } = useLocation();
+  return (
+  <Suspense
+    key={areaOf(pathname)}
+    fallback={
+      <>
+        <div className="route-progress" />
+        <PageLoader className="min-h-dvh" />
+      </>
+    }
+  >
     <Routes>
       <Route element={<PublicLayout />}>
         <Route path="/" element={<Home />} />
@@ -242,6 +284,7 @@ const AppRoutes = () => (
       <Route path="*" element={<NotFound />} />
     </Routes>
   </Suspense>
-);
+  );
+};
 
 export default AppRoutes;

@@ -5,6 +5,8 @@ import { recordSearch } from '../search/searchStats.service.js';
 import { JOB_STATUS, JOB_KIND, ID_PREFIX, USER_STATUS, ROLES } from '../../shared/constants/index.js';
 import { generateUid } from '../../shared/models/counter.model.js';
 import { uniqueSlug, escapeRegex, omit, normalizeMobile, toArray } from '../../shared/utils/helpers.js';
+import { sha256 } from '../../shared/utils/crypto.js';
+import { JobView } from './jobView.model.js';
 import { parseWorkbook } from '../../shared/utils/excel.js';
 import { hasEmployerPermission, isAdmin } from '../../shared/middleware/auth.js';
 import Job from './job.model.js';
@@ -439,14 +441,35 @@ export async function searchFacets(query) {
   return Object.fromEntries(Object.keys(FACETS).map((k) => [k, clean(res[k])]));
 }
 
-export async function getPublicJob(idOrSlug, viewer) {
+const BOT_UA = /bot|crawl|spider|slurp|preview|facebookexternalhit|whatsapp|telegram|headless|lighthouse|curl|wget|python|axios|node-fetch|postman/i;
+const istDay = () => new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
+
+/**
+ * Counts a job view at most once per visitor per day and never for bots, link previews, the
+ * employer's own team or admins - so "views" and the apply rate reflect real job seekers.
+ */
+export async function countJobView(job, viewer, { ip, userAgent } = {}) {
+  if (!userAgent || BOT_UA.test(userAgent)) return false;
+  if (viewer && (isAdmin(viewer) || String(viewer.employer?.organization) === String(job.organization))) return false;
+  const visitor = viewer ? `u:${viewer._id}` : `g:${sha256(`${ip}|${userAgent}`).slice(0, 32)}`;
+  try {
+    await JobView.create({ job: job._id, visitor, day: istDay() });
+  } catch (err) {
+    if (err?.code === 11000) return false; // already counted today
+    throw err;
+  }
+  await Job.updateOne({ _id: job._id }, { $inc: { 'stats.views': 1 } });
+  return true;
+}
+
+export async function getPublicJob(idOrSlug, viewer, client = {}) {
   const isId = /^[a-f\d]{24}$/i.test(idOrSlug);
   const job = await Job.findOne(isId ? { _id: idOrSlug } : { slug: idOrSlug }).lean();
   const canSeeUnpublished = viewer && (isAdmin(viewer) || String(viewer.employer?.organization) === String(job?.organization));
   if (!job || (job.status !== JOB_STATUS.ACTIVE && !canSeeUnpublished && job.status !== JOB_STATUS.EXPIRED && job.status !== JOB_STATUS.CLOSED)) {
     throw ApiError.notFound('Job not found');
   }
-  Job.updateOne({ _id: job._id }, { $inc: { 'stats.views': 1 } }).catch(() => {});
+  countJobView(job, viewer, client).catch(() => {});
 
   const org = await Organization.findById(job.organization)
     .select('name slug username logo about employerType industries employeeCount website isVerified stats offices')

@@ -7,6 +7,7 @@ import { Icon } from '../../components/ui/feedback';
 import { AlertSendJobs, BulkJobAlert, JobCandidates, SendTemplate } from '../../components/admin/AdminActions';
 import InvoiceViewer from '../../components/shared/InvoiceViewer';
 import { adminApi } from '../../services';
+import { loginAs } from '../../components/admin/loginAs';
 import { formatCurrency, formatDate, formatDateTime, formatLocations, titleCase } from '../../utils/format';
 
 const opt = (list) => list.map((value) => ({ value, label: titleCase(value) }));
@@ -38,14 +39,6 @@ const EMPLOYER_PICKERS = [{ action: 'label_add', label: 'Add label', options: op
 const JOB_PICKERS = [{ action: 'label_add', label: 'Add label', options: opt(['premium', 'starred', 'featured', 'actively_hiring', 'urgent']) }, { action: 'label_remove', label: 'Remove label', options: opt(['premium', 'starred', 'featured', 'actively_hiring', 'urgent']) }];
 const USER_STATUS = opt(['active', 'pending', 'admin_review', 'blocked', 'suspended', 'trashed']);
 
-const impersonate = async (id) => {
-  try {
-    const data = await adminApi.post(`/users/${id}/impersonate`);
-    window.open(`/impersonate#${encodeURIComponent(data.tokens.accessToken)}`, '_blank', 'noopener');
-  } catch (e) {
-    toast.error(e.message);
-  }
-};
 
 const WithModal = ({ label, render }) => {
   const [open, setOpen] = useState(false);
@@ -95,8 +88,8 @@ const OrderStatus = ({ order, refresh }) => {
   return null;
 };
 
-const LoginAs = ({ id }) => (
-  <Button size="sm" variant="ghost" onClick={() => impersonate(id)}>
+const LoginAs = ({ id, name }) => (
+  <Button size="sm" variant="ghost" onClick={() => loginAs(id, name)}>
     Login as
   </Button>
 );
@@ -261,7 +254,7 @@ export const MODULES = {
     rowActions: (r) => (
       <>
         <Open to={`/admin/candidates/${r._id}`}>View</Open>
-        <LoginAs id={r._id} />
+        <LoginAs id={r._id} name={r.fullName} />
       </>
     ),
   },
@@ -502,7 +495,7 @@ export const MODULES = {
     columns: [person, { key: 'role', header: 'Role', render: (r) => titleCase(r.role) }, { key: 'org', header: 'Organization', render: (r) => r.employer?.organization?.name || '—' }, status(), date('lastLoginAt', 'Last login')],
     filters: [{ key: 'role', label: 'Role', options: opt(['candidate', 'employer', 'admin', 'super_admin']) }, { key: 'status', label: 'Status', options: USER_STATUS }],
     bulk: { path: '/users/bulk', actions: USER_BULK },
-    rowActions: (r) => <LoginAs id={r._id} />,
+    rowActions: (r) => <LoginAs id={r._id} name={r.fullName} />,
   },
   roles: { title: 'Admins', path: '/admins', search: false, timespan: false, columns: [person, { key: 'role', header: 'Role', render: (r) => titleCase(r.role) }, status(), date('lastLoginAt', 'Last login')], createFields: adminFields, editFields: [{ key: 'fullName', label: 'Full name' }, { key: 'role', label: 'Role', type: 'select', options: opt(['admin', 'super_admin']) }, { key: 'status', label: 'Status', type: 'select', options: opt(['active', 'suspended', 'blocked']) }, { key: 'permissions', from: 'admin.permissions', label: 'Permissions (none selected = full access)', type: 'multi', options: ADMIN_PERMISSION_OPTIONS }, { key: 'password', label: 'New password', inputType: 'password', hint: 'Leave empty to keep the current password' }] },
   'login-audit': { title: 'Login Audit', path: '/login-attempts', columns: [{ key: 'identifier', header: 'Identifier', render: (r) => r.identifier || '—' }, { key: 'role', header: 'Role', render: (r) => titleCase(r.role || 'unknown') }, { key: 'success', header: 'Result', render: (r) => <Badge tone={r.success ? 'green' : 'red'}>{r.success ? 'Success' : 'Failed'}</Badge> }, { key: 'ip', header: 'IP', render: (r) => r.ip || '—' }, stamp()], filters: [{ key: 'success', label: 'Result', options: [{ value: 'true', label: 'Success' }, { value: 'false', label: 'Failed' }] }] },

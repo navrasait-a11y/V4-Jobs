@@ -9,6 +9,7 @@ import useAuth from '../../hooks/useAuth';
 import { useDocumentTitle } from '../../hooks/useData';
 import { adminApi } from '../../services';
 import { TIMESPAN_OPTIONS, formatCurrency, formatNumber, timeAgo, titleCase } from '../../utils/format';
+import DemoDataNotice from '../../components/admin/DemoDataNotice';
 
 const SERIES = [
   { key: 'candidates', name: 'New candidates', color: '#0A6CB5' },
@@ -85,6 +86,7 @@ const AdminOverview = () => {
 
   return (
     <div className="space-y-5">
+      <DemoDataNotice demo={d.demoData} className="" />
       <div className="flex flex-col gap-3 rounded-2xl bg-gradient-to-r from-[#0A4F8C] to-brand-blue p-5 text-white sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-sm text-white/80">{hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'}</p>
@@ -215,7 +217,7 @@ const AdminOverview = () => {
                 <span className="block truncate font-medium">{o.planName || 'Plan'}</span>
                 <span className="text-xs text-brand-gray-muted">{timeAgo(o.paidAt)}</span>
               </span>
-              <span className="font-semibold text-brand-green">{formatCurrency(o.total)}</span>
+              <span className="font-semibold text-brand-green">{formatCurrency((o.total || 0) + (o.walletUsed || 0))}</span>
             </li>
           )}
         />

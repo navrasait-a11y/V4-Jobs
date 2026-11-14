@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import http, { hasSessionHint, refreshSession, setAccessToken, setSessionExpiredHandler } from '../services/api';
 import { setMonitoringUser } from '../utils/monitoring';
+import { clearImpersonation, getImpersonation, isImpersonationTab } from '../utils/impersonation';
 
 const ADMIN_ROLES = ['admin', 'super_admin'];
 
@@ -25,7 +26,9 @@ const useAuthStore = create((set, get) => ({
 
   /** Restores the session from the httpOnly refresh cookie on page load. */
   bootstrap: async () => {
-    if (!hasSessionHint()) return set({ status: 'ready' });
+    // The "login as" page signs this tab in itself; restoring the admin's session here would race it.
+    if (window.location.pathname === '/impersonate') return;
+    if (!isImpersonationTab() && !hasSessionHint()) return set({ status: 'ready' });
     try {
       await refreshSession();
       await get().loadMe();
@@ -37,12 +40,20 @@ const useAuthStore = create((set, get) => ({
   },
 
   logout: async ({ allDevices = false } = {}) => {
+    const impersonating = isImpersonationTab();
+    const sameTab = Boolean(getImpersonation()?.sameTab);
     try {
       await http.post('/auth/logout', { allDevices });
     } catch {
       /* local logout still proceeds */
     }
     get().clear();
+    if (impersonating) {
+      clearImpersonation();
+      // A tab opened by the admin panel can be closed by script; the admin's own tab goes back to the panel.
+      if (!sameTab) window.close();
+      setTimeout(() => window.location.replace('/admin/overview'), sameTab ? 0 : 300);
+    }
   },
 
   clear: () => {
@@ -51,7 +62,10 @@ const useAuthStore = create((set, get) => ({
   },
 }));
 
-setSessionExpiredHandler(() => useAuthStore.getState().clear());
+setSessionExpiredHandler(() => {
+  if (isImpersonationTab()) clearImpersonation(); // "login as" sessions end after 2 hours
+  useAuthStore.getState().clear();
+});
 
 export const isAdminRole = (role) => ADMIN_ROLES.includes(role);
 

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import Joi from 'joi';
 import validate from '../../shared/middleware/validate.js';
-import { authenticate, authorize } from '../../shared/middleware/auth.js';
+import { authenticate, authorize, forbidImpersonation } from '../../shared/middleware/auth.js';
 import { upload } from '../../shared/middleware/upload.js';
 import { uploadLimiter } from '../../shared/middleware/rateLimit.js';
 import { ok, created } from '../../shared/http/response.js';
@@ -56,11 +56,11 @@ r.get(
 );
 r.get('/me/resume-builder', async (req, res) => ok(res, await s.getResumeBuilder(req.user._id)));
 r.put('/me/resume-builder', validate(v.resumeBuilder), async (req, res) => ok(res, await s.saveResumeBuilder(req.user._id, req.body), 'Resume saved'));
-r.post('/me/deactivate', validate({ body: Joi.object({ reason: Joi.string().max(500).allow('') }) }), async (req, res) => {
+r.post('/me/deactivate', forbidImpersonation, validate({ body: Joi.object({ reason: Joi.string().max(500).allow('') }) }), async (req, res) => {
   await s.deactivate(req, req.body);
   return ok(res, null, 'Account deactivated. Log in again any time to reactivate');
 });
-r.delete('/me', validate(v.deleteAccount), async (req, res) => {
+r.delete('/me', forbidImpersonation, validate(v.deleteAccount), async (req, res) => {
   await s.deleteAccount(req, req.body);
   return ok(res, null, 'Account deleted');
 });

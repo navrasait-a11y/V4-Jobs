@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import toast from 'react-hot-toast';
 import AccountPanel, { CANDIDATE_LABELS } from '../../components/admin/AccountPanel';
 import { PlanAndWallet } from '../../components/admin/AdminActions';
 import UserActivity from '../../components/admin/UserActivity';
@@ -13,6 +12,7 @@ import { ConfirmDialog, EmptyState, ErrorState, Icon, PageLoader } from '../../c
 import { CheckboxField, Field, TextAreaField } from '../../components/ui/form';
 import { useAction, useDocumentTitle } from '../../hooks/useData';
 import { adminApi } from '../../services';
+import { loginAs } from '../../components/admin/loginAs';
 import { CALLING_LABELS, MESSAGING_LABELS, SCREENING_LABELS, formatDate, formatDateTime, monthsToExperience, placeLabel, timeAgo, titleCase } from '../../utils/format';
 import { ProfileView } from '../candidate/Profile';
 
@@ -26,14 +26,6 @@ const TABS = [
 ];
 const opts = (map) => Object.entries(map).map(([value, label]) => ({ value, label }));
 
-const loginAs = async (userId) => {
-  try {
-    const data = await adminApi.post(`/users/${userId}/impersonate`);
-    window.open(`/impersonate#${encodeURIComponent(data.tokens.accessToken)}`, '_blank', 'noopener');
-  } catch (e) {
-    toast.error(e.message);
-  }
-};
 
 /** Candidate screening, calling and messaging status plus admin comments (PRD 4.1 Candidates). */
 const Screening = ({ id, tracking }) => {
@@ -134,16 +126,20 @@ const AdminCandidate = () => {
         <Icon name="arrow_back" size={16} /> Candidates
       </Link>
       <div className="surface overflow-hidden">
-        <div className="h-16 bg-gradient-to-r from-brand-blue to-[#4F8FD6]" />
-        <div className="-mt-8 flex flex-col gap-4 px-5 pb-5 lg:flex-row lg:items-end">
-          <Avatar name={user.fullName} src={user.avatar?.url} size={84} className="ring-4 ring-white" />
-          <div className="min-w-0 flex-1">
-            <h1 className="flex flex-wrap items-center gap-2 text-xl font-bold text-brand-dark">
+        <div className="relative h-20 overflow-hidden bg-gradient-to-r from-[#0A4F8C] via-brand-blue to-[#4F8FD6] sm:h-24" aria-hidden="true">
+          <div className="absolute -right-10 -top-12 h-40 w-40 rounded-full bg-white/10" />
+          <div className="absolute right-24 top-6 h-20 w-20 rounded-full bg-white/10" />
+        </div>
+        {/* Only the photo overlaps the banner; the name and details always sit on the white card. */}
+        <div className="flex flex-col gap-3 px-4 pb-5 sm:px-5 lg:flex-row lg:items-start lg:gap-5">
+          <Avatar name={user.fullName} src={user.avatar?.url} size={96} className="relative z-10 -mt-12 shrink-0 shadow-md ring-4 ring-white" />
+          <div className="min-w-0 flex-1 lg:pt-3">
+            <h1 className="flex flex-wrap items-center gap-x-2 gap-y-1 break-words text-xl font-bold leading-tight text-brand-dark sm:text-2xl">
               {user.fullName}
               {user.isVerified && <Icon name="verified" size={18} fill className="text-brand-green" />}
               <StatusBadge status={user.status} />
             </h1>
-            <p className="text-sm text-brand-gray">{[profile.currentJobTitle, profile.currentEmployer].filter(Boolean).join(' at ') || profile.resumeHeadline || 'No headline yet'}</p>
+            <p className="mt-1 text-[15px] text-brand-gray">{[profile.currentJobTitle, profile.currentEmployer].filter(Boolean).join(' at ') || profile.resumeHeadline || 'No headline yet'}</p>
             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-brand-gray-muted">
               <span className="font-mono">{user.uid}</span>
               {user.email && <span className="flex items-center gap-1"><Icon name="mail" size={14} /> {user.email} {user.emailVerifiedAt && <Icon name="check_circle" size={13} className="text-brand-green" />}</span>}
@@ -158,8 +154,8 @@ const AdminCandidate = () => {
               <Badge tone="gray">Source: {titleCase(user.source || 'direct')}</Badge>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="primaryBlue" leftIcon={<Icon name="login" size={16} />} onClick={() => loginAs(id)}>
+          <div className="flex flex-wrap gap-2 lg:max-w-[46%] lg:justify-end lg:pt-3">
+            <Button size="sm" variant="primaryBlue" leftIcon={<Icon name="login" size={16} />} onClick={() => loginAs(id, user.fullName)}>
               Login as user
             </Button>
             <Button size="sm" variant="outline" loading={link.isPending} onClick={() => link.mutate('activation')}>

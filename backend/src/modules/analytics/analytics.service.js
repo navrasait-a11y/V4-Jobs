@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { resolveTimespan, daysAgo } from '../../shared/utils/timespan.js';
 import { ROLES, USER_STATUS } from '../../shared/constants/index.js';
 import { FREE_VISIBLE, viewerAccess } from '../candidates/profileViews.service.js';
@@ -16,6 +17,14 @@ import { Conversation } from '../chat/chat.models.js';
 const TZ = 'Asia/Kolkata';
 const range = (q, defaultDays = 30) => resolveTimespan(q) || { from: daysAgo(defaultDays), to: new Date() };
 const toMap = (rows) => Object.fromEntries(rows.map((r) => [r._id ?? 'unknown', r.count]));
+/**
+ * Revenue = what customers paid for plans, incl. GST: the online payment plus the part paid from the
+ * wallet. Wallet top-ups are deposits, not sales, so they are left out (they become revenue when the
+ * wallet is spent on a plan).
+ */
+const SALE = { status: 'paid', kind: { $ne: 'wallet_topup' } };
+const SALE_VALUE = { $add: ['$total', { $ifNull: ['$walletUsed', 0] }] };
+
 const dailySeries = (Model, match, field = 'createdAt', valueExpr = { $sum: 1 }) =>
   Model.aggregate([
     { $match: match },
@@ -140,6 +149,17 @@ export async function candidateAnalytics(userId, q) {
 
 /* ------------------------------------------------------------------- admin */
 
+/**
+ * Pre-launch demo records (scripts/demo-data.js) are listed in the demo_manifest collection. While
+ * they exist the dashboard says so, because every chart and count includes them.
+ */
+export async function demoDataSummary() {
+  const doc = await mongoose.connection.db.collection('demo_manifest').findOne({}, { projection: { ids: 1 } });
+  if (!doc?.ids) return null;
+  const count = (k) => doc.ids[k]?.length || 0;
+  return { accounts: count('User'), employers: count('Organization'), jobs: count('Job'), applications: count('Application') };
+}
+
 export async function adminDashboard(q) {
   const { from, to } = range(q);
   const created = { $gte: from, $lte: to };
@@ -148,7 +168,7 @@ export async function adminDashboard(q) {
     Organization.aggregate([{ $group: { _id: { type: '$type', status: '$status' }, count: { $sum: 1 } } }]),
     Job.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }]),
     Application.countDocuments({ createdAt: created }),
-    Order.aggregate([{ $match: { status: 'paid', paidAt: created } }, { $group: { _id: null, revenue: { $sum: '$total' }, orders: { $sum: 1 } } }]),
+    Order.aggregate([{ $match: { ...SALE, paidAt: created } }, { $group: { _id: null, revenue: { $sum: SALE_VALUE }, orders: { $sum: 1 } } }]),
     User.aggregate([{ $match: { createdAt: created } }, { $group: { _id: '$role', count: { $sum: 1 } } }]),
     Report.countDocuments({ status: { $in: ['open', 'in_review'] } }),
     Conversation.countDocuments({ type: 'support', status: 'open' }),
@@ -177,7 +197,7 @@ export async function adminDashboard(q) {
       User.find({ role: ROLES.CANDIDATE, status: { $ne: USER_STATUS.TRASHED } }).sort({ createdAt: -1 }).limit(6).select('fullName email avatar source createdAt').lean(),
       Organization.find({ status: { $in: [USER_STATUS.PENDING, 'admin_review'] } }).sort({ createdAt: -1 }).limit(6).select('name type logo kycStatus createdAt').lean(),
       Job.find({ status: { $in: ['pending', 'admin_review'] } }).sort({ updatedAt: -1 }).limit(6).select('title orgSnapshot.name status statusReason updatedAt').lean(),
-      Order.find({ status: 'paid' }).sort({ paidAt: -1 }).limit(6).select('planName total paidAt invoiceNumber').lean(),
+      Order.find(SALE).sort({ paidAt: -1 }).limit(6).select('planName total walletUsed paidAt invoice').populate('invoice', 'number').lean(),
     ]);
   // One row per day with every series, for a single trend chart.
   const days = new Map();
@@ -198,6 +218,7 @@ export async function adminDashboard(q) {
     newEmployers: employersDaily.reduce((n, r) => n + r.count, 0),
     trend: [...days.values()].sort((a, b) => a.date.localeCompare(b.date)),
     pending: { reports: openReports, supportChats: openSupport, kycReviews: pendingKyc, jobReviews: pendingJobs, employers: pendingEmployers },
+    demoData: await demoDataSummary(),
     recent: { candidates: recentCandidates, employersToApprove, jobsToReview, orders: recentOrders },
   };
 }
@@ -233,10 +254,10 @@ export async function adminAnalytics(q) {
   const created = { $gte: from, $lte: to };
   const [revenueDaily, revenueByPlan, growth, categoryPerf, jobViews, candidatesTotal, candidatesApplied, employersTotal, employersPaid, topSkills, topCities] =
     await Promise.all([
-      dailySeries(Order, { status: 'paid', paidAt: created }, 'paidAt', { $sum: '$total' }),
+      dailySeries(Order, { ...SALE, paidAt: created }, 'paidAt', { $sum: SALE_VALUE }),
       Order.aggregate([
-        { $match: { status: 'paid', paidAt: created } },
-        { $group: { _id: '$planName', revenue: { $sum: '$total' }, orders: { $sum: 1 } } },
+        { $match: { ...SALE, paidAt: created } },
+        { $group: { _id: '$planName', revenue: { $sum: SALE_VALUE }, orders: { $sum: 1 } } },
         { $sort: { revenue: -1 } },
       ]),
       User.aggregate([
@@ -264,7 +285,7 @@ export async function adminAnalytics(q) {
       User.countDocuments({ role: ROLES.CANDIDATE, createdAt: created }),
       Application.distinct('candidate', { createdAt: created }).then((x) => x.length),
       Organization.countDocuments({ createdAt: created }),
-      Order.distinct('organization', { status: 'paid', paidAt: created, total: { $gt: 0 }, organization: { $ne: null } }).then((x) => x.length),
+      Order.distinct('organization', { ...SALE, paidAt: created, $expr: { $gt: [SALE_VALUE, 0] }, organization: { $ne: null } }).then((x) => x.length),
       Job.aggregate([
         { $match: { status: 'active' } },
         { $unwind: '$keySkills' },
@@ -293,6 +314,7 @@ export async function adminAnalytics(q) {
     },
     traffic: jobViews[0] || { views: 0, applications: 0, shares: 0 },
     jobCategoryPerformance: categoryPerf,
+    demoData: await demoDataSummary(),
     topSkills,
     topCities,
   };

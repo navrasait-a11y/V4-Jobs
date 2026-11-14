@@ -7,6 +7,7 @@ import { EmptyState, ErrorState, PageLoader } from '../../components/ui/feedback
 import { useDocumentTitle } from '../../hooks/useData';
 import { adminApi } from '../../services';
 import { formatCurrency, formatNumber } from '../../utils/format';
+import DemoDataNotice from '../../components/admin/DemoDataNotice';
 
 const GRID = '#E3E9F0';
 const BLUE = '#0151A0';
@@ -105,8 +106,9 @@ const AdminAnalytics = () => {
   return (
     <div className={query.isPlaceholderData ? 'opacity-70 transition-opacity' : ''}>
       {header}
+      <DemoDataNotice demo={d.demoData} />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile icon="currency_rupee" label="Revenue" value={formatCurrency(d.revenue?.total || 0)} note={`${formatNumber((d.revenue?.byPlan || []).reduce((a, p) => a + p.orders, 0))} paid orders`} to="/admin/orders?status=paid" />
+        <StatTile icon="currency_rupee" label="Revenue (incl. GST)" value={formatCurrency(d.revenue?.total || 0)} note={`${formatNumber((d.revenue?.byPlan || []).reduce((a, p) => a + p.orders, 0))} paid orders`} to="/admin/orders?status=paid" />
         <StatTile icon="group_add" label="New users" value={formatNumber(newUsers)} note={`${formatNumber(c.candidatesRegistered || 0)} candidates · ${formatNumber(c.employersRegistered || 0)} employers`} />
         <StatTile icon="how_to_reg" label="Candidates who applied" value={pct(c.candidatesApplied || 0, c.candidatesRegistered || 0)} note={`${formatNumber(c.candidatesApplied || 0)} of ${formatNumber(c.candidatesRegistered || 0)} new candidates`} />
         <StatTile icon="workspace_premium" label="Employers who paid" value={`${c.employerPaidRate || 0}%`} note={`${formatNumber(c.employersPaid || 0)} of ${formatNumber(c.employersRegistered || 0)} new employers`} />
@@ -165,6 +167,7 @@ const AdminAnalytics = () => {
           <SimpleTable head={['Plan', 'Orders', 'Revenue']} rows={(d.revenue?.byPlan || []).map((p) => [p._id || 'Other', formatNumber(p.orders), formatCurrency(p.revenue)])} empty="No paid orders in this period." />
         </Section>
         <Section title="Job category performance">
+          <p className="-mt-1 mb-2 text-xs text-brand-gray-muted">Jobs published in the selected period. A view is one person opening a job, counted once a day; bots and the employer's own team are not counted.</p>
           <SimpleTable
             head={['Department', 'Jobs', 'Views', 'Applications', 'Apply rate']}
             rows={categories.slice(0, 12).map((x) => [x._id, formatNumber(x.jobs), formatNumber(x.views), formatNumber(x.applications), pct(x.applications, x.views)])}

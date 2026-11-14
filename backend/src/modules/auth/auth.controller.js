@@ -40,13 +40,16 @@ export const twoFactorLogin = async (req, res) => respondWithSession(req, res, a
 
 export const refresh = async (req, res) => {
   const tokens = await service.refresh(req, readRefresh(req));
-  setRefreshCookie(res, tokens.refreshToken, tokens.refreshExpiresAt);
+  // Only cookie sessions get a new cookie. A client that sent its refresh token in the body (mobile
+  // app, admin "login as" tab) keeps it itself and must not replace the browser's own login cookie.
+  if (!req.body?.refreshToken) setRefreshCookie(res, tokens.refreshToken, tokens.refreshExpiresAt);
   return ok(res, { tokens }, 'Token refreshed');
 };
 
 export const logout = async (req, res) => {
   await service.logout(req, req.body);
-  clearRefreshCookie(res);
+  // Ending a "login as" session must not sign the admin out of their own panel in the same browser.
+  if (!req.auth?.impersonatedBy && !req.body?.refreshToken) clearRefreshCookie(res);
   return ok(res, null, 'Logged out');
 };
 
